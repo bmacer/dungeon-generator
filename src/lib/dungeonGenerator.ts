@@ -396,134 +396,179 @@ export class DungeonGenerator {
     throw new Error("Unexpected path generation failure");
   }
 
-  createOffshoots(numOffshoots: number, depth: number): Room[] {
-    for (let offshoot = 0; offshoot < numOffshoots; offshoot++) {
-      // Filter out special rooms (start, north-start, and middle room)
-      const availableRooms = this.rooms.filter(
-        (room) =>
-          room.id !== "start" &&
-          room.id !== "north-start" &&
-          room.id !== "middle-room" &&
-          !room.id.startsWith("offshoot") // Also exclude existing offshoots
-      );
+  createOffshoots(
+    numOffshoots: number,
+    depth: number,
+    randomRooms: Array<{ width: number; height: number }>
+  ): Room[] {
+    const maxOverallAttempts = 500; // Increased attempts to find all offshoots
+    let overallAttempts = 0;
 
-      if (availableRooms.length === 0) {
-        break;
-      }
+    while (overallAttempts < maxOverallAttempts) {
+      // Reset rooms for this attempt
+      const originalRoomCount = this.rooms.length;
+      const createdOffshoots: Room[][] = [];
 
-      const startingRoom =
-        availableRooms[Math.floor(Math.random() * availableRooms.length)];
-      let currentRoom = startingRoom;
+      // Track rooms that have already been used as offshoot starting points
+      const usedStartRooms = new Set<string>();
 
-      // Create a branch of rooms up to the specified depth
-      for (let d = 0; d < depth; d++) {
-        const roomTypes = [
-          { type: "2x2", width: 2, height: 2 },
-          { type: "1x3", width: 1, height: 3 },
-          { type: "1x3", width: 3, height: 1 },
-          { type: "3x3", width: 3, height: 3 },
-        ];
+      while (createdOffshoots.length < numOffshoots) {
+        // Filter out special rooms and already used rooms
+        const availableRooms = this.rooms.slice(0, originalRoomCount).filter(
+          (room) =>
+            room.id !== "start" &&
+            room.id !== "north-start" &&
+            room.id !== "middle-room" &&
+            !room.id.startsWith("offshoot") && // Exclude existing offshoots
+            !usedStartRooms.has(room.id) // Exclude rooms already used as offshoot start
+        );
 
-        let placed = false;
-        let attempts = 0;
-        const maxAttempts = 30;
-
-        while (!placed && attempts < maxAttempts) {
-          const randomRoom =
-            roomTypes[Math.floor(Math.random() * roomTypes.length)];
-          const directions = [
-            { dx: 1, dy: 0, dir: "west" },
-            { dx: -1, dy: 0, dir: "east" },
-            { dx: 0, dy: -1, dir: "south" },
-            { dx: 0, dy: 1, dir: "north" },
-          ];
-
-          const validDirections = directions.filter((dir) =>
-            this.isValidDirection(currentRoom.x, currentRoom.y, dir.dx, dir.dy)
-          );
-
-          if (validDirections.length === 0) {
-            attempts++;
-            continue;
-          }
-
-          const direction =
-            validDirections[Math.floor(Math.random() * validDirections.length)];
-
-          // Pick a random cell from the current room to connect from
-          const currentRoomCell =
-            currentRoom.cells[
-              Math.floor(Math.random() * currentRoom.cells.length)
-            ];
-
-          const newRoom: Room = {
-            id: `offshoot-${offshoot}-${d}`,
-            type: randomRoom.type as "1x3" | "2x2" | "1x1",
-            width: randomRoom.width,
-            height: randomRoom.height,
-            x: currentRoomCell.x + direction.dx,
-            y: currentRoomCell.y + direction.dy,
-            cells: [],
-            doors: [],
-          };
-
-          const validRoom = this.canPlaceRoom(
-            randomRoom.width,
-            randomRoom.height,
-            newRoom.x,
-            newRoom.y,
-            currentRoom,
-            currentRoomCell,
-            direction
-          );
-          if (validRoom) {
-            validRoom.id = newRoom.id;
-            this.markRoomOnGrid(validRoom);
-
-            const doorDirection = direction.dir as DoorDirection;
-            const oppositeDirections: Record<DoorDirection, DoorDirection> = {
-              north: "south",
-              south: "north",
-              east: "west",
-              west: "east",
-            };
-
-            // Add doors between rooms
-            if (
-              this.isValidDoorPosition(
-                currentRoom,
-                currentRoomCell.x,
-                currentRoomCell.y
-              )
-            ) {
-              currentRoom.doors.push({
-                x: currentRoomCell.x,
-                y: currentRoomCell.y,
-                direction: doorDirection,
-              });
-            }
-
-            const newDoorX = currentRoomCell.x + direction.dx;
-            const newDoorY = currentRoomCell.y + direction.dy;
-            if (this.isValidDoorPosition(validRoom, newDoorX, newDoorY)) {
-              validRoom.doors.push({
-                x: newDoorX,
-                y: newDoorY,
-                direction: oppositeDirections[doorDirection],
-              });
-            }
-
-            this.rooms.push(validRoom);
-            currentRoom = validRoom;
-            placed = true;
-          }
-          attempts++;
+        if (availableRooms.length === 0) {
+          break; // No more rooms available to start offshoots
         }
 
-        // If we couldn't place a room, stop this branch
-        if (!placed) break;
+        const startingRoom =
+          availableRooms[Math.floor(Math.random() * availableRooms.length)];
+        usedStartRooms.add(startingRoom.id);
+
+        let currentRoom = startingRoom;
+        const offshootRooms: Room[] = [startingRoom];
+
+        // Create a branch of rooms up to the specified depth
+        for (let d = 0; d < depth; d++) {
+          const randomRoom =
+            randomRooms[Math.floor(Math.random() * randomRooms.length)];
+
+          let placed = false;
+          let attempts = 0;
+          const maxAttempts = 300;
+
+          while (!placed && attempts < maxAttempts) {
+            const directions = [
+              { dx: 1, dy: 0, dir: "west" },
+              { dx: -1, dy: 0, dir: "east" },
+              { dx: 0, dy: -1, dir: "south" },
+              { dx: 0, dy: 1, dir: "north" },
+            ];
+
+            const validDirections = directions.filter((dir) =>
+              this.isValidDirection(
+                currentRoom.x,
+                currentRoom.y,
+                dir.dx,
+                dir.dy
+              )
+            );
+
+            if (validDirections.length === 0) {
+              attempts++;
+              continue;
+            }
+
+            const direction =
+              validDirections[
+                Math.floor(Math.random() * validDirections.length)
+              ];
+
+            // Pick a random cell from the current room to connect from
+            const currentRoomCell =
+              currentRoom.cells[
+                Math.floor(Math.random() * currentRoom.cells.length)
+              ];
+
+            const newRoom: Room = {
+              id: `offshoot-${createdOffshoots.length}-${d}`,
+              type: "2x2", // Default type, actual dimensions come from template
+              width: randomRoom.width,
+              height: randomRoom.height,
+              x: currentRoomCell.x + direction.dx,
+              y: currentRoomCell.y + direction.dy,
+              cells: [],
+              doors: [],
+            };
+
+            const validRoom = this.canPlaceRoom(
+              randomRoom.width,
+              randomRoom.height,
+              newRoom.x,
+              newRoom.y,
+              currentRoom,
+              currentRoomCell,
+              direction
+            );
+            if (validRoom) {
+              validRoom.id = newRoom.id;
+              this.markRoomOnGrid(validRoom);
+
+              const doorDirection = direction.dir as DoorDirection;
+              const oppositeDirections: Record<DoorDirection, DoorDirection> = {
+                north: "south",
+                south: "north",
+                east: "west",
+                west: "east",
+              };
+
+              // Add doors between rooms
+              if (
+                this.isValidDoorPosition(
+                  currentRoom,
+                  currentRoomCell.x,
+                  currentRoomCell.y
+                )
+              ) {
+                currentRoom.doors.push({
+                  x: currentRoomCell.x,
+                  y: currentRoomCell.y,
+                  direction: doorDirection,
+                });
+              }
+
+              const newDoorX = currentRoomCell.x + direction.dx;
+              const newDoorY = currentRoomCell.y + direction.dy;
+              if (this.isValidDoorPosition(validRoom, newDoorX, newDoorY)) {
+                validRoom.doors.push({
+                  x: newDoorX,
+                  y: newDoorY,
+                  direction: oppositeDirections[doorDirection],
+                });
+              }
+
+              this.rooms.push(validRoom);
+              offshootRooms.push(validRoom);
+              currentRoom = validRoom;
+              placed = true;
+            }
+            attempts++;
+          }
+
+          // If we couldn't place a room to full depth, break and retry
+          if (!placed) {
+            break;
+          }
+        }
+
+        // Only add offshoot if it reached full depth
+        if (offshootRooms.length === depth + 1) {
+          createdOffshoots.push(offshootRooms);
+        } else {
+          // Remove partially created offshoot rooms
+          this.rooms = this.rooms.filter(
+            (room) => !room.id.startsWith(`offshoot-${createdOffshoots.length}`)
+          );
+        }
       }
+
+      // Check if we successfully created all required offshoots
+      if (createdOffshoots.length === numOffshoots) {
+        return this.rooms;
+      }
+
+      // If not successful, reset and try again
+      this.rooms = this.rooms.slice(0, originalRoomCount);
+      overallAttempts++;
     }
+
+    // If we couldn't create offshoots after multiple attempts, return original rooms
     return this.rooms;
   }
 

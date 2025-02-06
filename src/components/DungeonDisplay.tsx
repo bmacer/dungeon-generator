@@ -46,10 +46,10 @@ export default function DungeonDisplay() {
         y: CENTER_POINT,
     });
     const [rooms, setRooms] = useState<RoomWithColor[]>([]);
-    const [scale, setScale] = useState(20);
+    const [scale, setScale] = useState(13);
     const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
-    const [roomCount, setRoomCount] = useState(10);
-    const [offshoots, setOffshoots] = useState({ count: 0, depth: 0 });
+    const [roomCount, setRoomCount] = useState(20);
+    const [offshoots, setOffshoots] = useState({ count: 2, depth: 3 });
     const [hasMiddleRoom, setHasMiddleRoom] = useState(false);
     const [roomSizes, setRoomSizes] = useState<RoomSizes>({
         startRoom: { width: 2, height: 2 },
@@ -92,17 +92,18 @@ export default function DungeonDisplay() {
 
     const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator();
-        const generatedRooms = generator.createShortestPath(roomCount, {
+        generator.createShortestPath(roomCount, {
             ...roomSizes,
             hasMiddleRoom,
-            randomRooms: [
-                { width: 2, height: 2 },
-                { width: 1, height: 3 },
-                { width: 3, height: 1 },
-            ],
+            randomRooms: roomSizes.randomRooms,
         });
+        const roomsWithOffshoots = generator.createOffshoots(
+            offshoots.count,
+            offshoots.depth,
+            roomSizes.randomRooms
+        );
         setRooms(
-            generatedRooms.map((room) => ({
+            roomsWithOffshoots.map((room) => ({
                 ...room,
                 color:
                     room.id === "start"
@@ -120,11 +121,11 @@ export default function DungeonDisplay() {
         );
         setPlayerPos({ x: CENTER_POINT, y: CENTER_POINT });
         setViewOffset({ x: 0, y: 0 });
-    }, [roomCount, hasMiddleRoom, roomSizes, roomTypeColors]);
+    }, [roomCount, hasMiddleRoom, roomSizes, roomTypeColors, offshoots]);
 
     useEffect(() => {
         generateDungeon();
-    }, [generateDungeon]);
+    }, []);
 
     // Handle rendering and movement
     useEffect(() => {
@@ -394,36 +395,25 @@ export default function DungeonDisplay() {
                                     Basic Settings
                                 </h3>
                                 <div className="space-y-4">
-                                    <div className="flex gap-4 items-center mb-4">
-                                        <label>
-                                            Room Count:
-                                            <input
-                                                type="number"
-                                                value={roomCount}
-                                                onChange={(e) => setRoomCount(parseInt(e.target.value))}
-                                                className="ml-2 p-1 border rounded"
-                                            />
-                                        </label>
-                                        <label className="flex items-center">
-                                            <input
-                                                type="checkbox"
-                                                checked={hasMiddleRoom}
-                                                onChange={(e) => setHasMiddleRoom(e.target.checked)}
-                                                className="mr-2"
-                                            />
-                                            Has Middle Room
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <label
-                                            htmlFor="offshoots"
-                                            className="text-sm text-gray-300 w-24"
-                                        >
-                                            Offshoots:
+                                    <div className="flex flex-col gap-2">
+                                        <label className="text-sm text-gray-300">
+                                            Room Count: {roomCount}
                                         </label>
                                         <input
-                                            id="offshoots"
-                                            type="number"
+                                            type="range"
+                                            min="5"
+                                            max="30"
+                                            value={roomCount}
+                                            onChange={(e) => setRoomCount(parseInt(e.target.value))}
+                                            className="w-full"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <label className="text-sm text-gray-300">
+                                            Offshoots: {offshoots.count}
+                                        </label>
+                                        <input
+                                            type="range"
                                             min="0"
                                             max="10"
                                             value={offshoots.count}
@@ -433,19 +423,15 @@ export default function DungeonDisplay() {
                                                     count: Number(e.target.value),
                                                 }))
                                             }
-                                            className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                            className="w-full"
                                         />
                                     </div>
-                                    <div className="flex items-center gap-4">
-                                        <label
-                                            htmlFor="offshootDepth"
-                                            className="text-sm text-gray-300 w-24"
-                                        >
-                                            Depth:
+                                    <div className="flex flex-col gap-2">
+                                        <label className="text-sm text-gray-300">
+                                            Depth: {offshoots.depth}
                                         </label>
                                         <input
-                                            id="offshootDepth"
-                                            type="number"
+                                            type="range"
                                             min="1"
                                             max="10"
                                             value={offshoots.depth}
@@ -455,8 +441,19 @@ export default function DungeonDisplay() {
                                                     depth: Number(e.target.value),
                                                 }))
                                             }
-                                            className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                            className="w-full"
                                         />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={hasMiddleRoom}
+                                            onChange={(e) => setHasMiddleRoom(e.target.checked)}
+                                            className="mr-2"
+                                        />
+                                        <label className="text-sm text-gray-300">
+                                            Has Middle Room
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -664,7 +661,7 @@ export default function DungeonDisplay() {
                         <input
                             id="scale"
                             type="range"
-                            min="10"
+                            min="1"
                             max="40"
                             value={scale}
                             onChange={(e) => setScale(Number(e.target.value))}
