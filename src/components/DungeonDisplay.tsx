@@ -127,6 +127,12 @@ export default function DungeonDisplay() {
         generateDungeon();
     }, []);
 
+    const [isDragging, setIsDragging] = useState(false);
+    const [lastMousePos, setLastMousePos] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
+
     // Handle rendering and movement
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -200,6 +206,48 @@ export default function DungeonDisplay() {
                 Math.PI * 2
             );
             ctx.fill();
+        };
+
+        const handleMouseDown = (e: MouseEvent) => {
+            setIsDragging(true);
+            setLastMousePos({ x: e.clientX, y: e.clientY });
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging || !lastMousePos) return;
+
+            const deltaX = e.clientX - lastMousePos.x;
+            const deltaY = e.clientY - lastMousePos.y;
+
+            setViewOffset((prev) => ({
+                x: prev.x + deltaX,
+                y: prev.y + deltaY,
+            }));
+
+            setLastMousePos({ x: e.clientX, y: e.clientY });
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+            setLastMousePos(null);
+        };
+
+        const handleMouseLeave = () => {
+            setIsDragging(false);
+            setLastMousePos(null);
+        };
+
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault(); // Prevent default scrolling
+
+            // Adjust zoom sensitivity
+            const zoomSensitivity = 0.1;
+            const zoomDelta = e.deltaY > 0 ? -zoomSensitivity : zoomSensitivity;
+
+            // Calculate new scale, with min and max limits
+            const newScale = Math.max(1, Math.min(40, scale + zoomDelta * scale));
+
+            setScale(newScale);
         };
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -323,13 +371,23 @@ export default function DungeonDisplay() {
             }
         };
 
+        canvas.addEventListener("mousedown", handleMouseDown);
+        canvas.addEventListener("mousemove", handleMouseMove);
+        canvas.addEventListener("mouseup", handleMouseUp);
+        canvas.addEventListener("mouseleave", handleMouseLeave);
+        canvas.addEventListener("wheel", handleWheel, { passive: false });
         window.addEventListener("keydown", handleKeyDown);
         drawGame();
 
         return () => {
+            canvas.removeEventListener("mousedown", handleMouseDown);
+            canvas.removeEventListener("mousemove", handleMouseMove);
+            canvas.removeEventListener("mouseup", handleMouseUp);
+            canvas.removeEventListener("mouseleave", handleMouseLeave);
+            canvas.removeEventListener("wheel", handleWheel);
             window.removeEventListener("keydown", handleKeyDown);
         };
-    }, [playerPos, rooms, scale, viewOffset]);
+    }, [playerPos, rooms, scale, viewOffset, isDragging, lastMousePos]);
 
     const addRandomRoom = () => {
         setRoomSizes((prev) => ({
