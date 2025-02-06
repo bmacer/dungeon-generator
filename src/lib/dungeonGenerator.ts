@@ -438,7 +438,8 @@ export class DungeonGenerator {
           (room) =>
             room.id !== "start" &&
             room.id !== "gnellen-start" &&
-            room.id !== "middle-room" &&
+            !room.id.includes("boss-room") &&
+            !room.id.includes("static-room") &&
             !room.id.startsWith("offshoot") && // Exclude existing offshoots
             !usedStartRooms.has(room.id) // Exclude rooms already used as offshoot start
         );
