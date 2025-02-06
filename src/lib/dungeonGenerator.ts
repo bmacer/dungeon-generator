@@ -242,7 +242,7 @@ export class DungeonGenerator {
 
         for (let i = 0; i < pathLength; i++) {
           let roomTypes = roomSizes.randomRooms;
-          let isBossRoom = i === pathLength - 1;
+          const isBossRoom = i === pathLength - 1;
 
           // Force middle room size at the middle point if enabled
           if (roomSizes.hasMiddleRoom && i === middleRoomIndex) {
@@ -385,7 +385,7 @@ export class DungeonGenerator {
         }
 
         return this.rooms;
-      } catch (error) {
+      } catch {
         pathAttempt++;
         if (pathAttempt >= maxPathAttempts) {
           throw new Error("Failed to generate path after multiple attempts");

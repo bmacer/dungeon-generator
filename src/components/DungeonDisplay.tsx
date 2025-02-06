@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { DungeonGenerator } from "@/lib/dungeonGenerator";
 
 type DoorDirection = "north" | "south" | "east" | "west";
@@ -64,14 +64,17 @@ export default function DungeonDisplay() {
         ],
     });
 
-    const roomTypeColors = {
-        start: "#32CD32", // Lime green
-        north: "#4169E1", // Royal blue
-        middle: "#4B0082", // Deep purple
-        boss: "#FF0000", // Red
-        path: "#228B22", // Forest Green (base for random shades)
-        offshoot: "#FFD700", // Gold (base for random shades)
-    };
+    const roomTypeColors = useMemo(
+        () => ({
+            start: "#32CD32", // Lime green
+            north: "#4169E1", // Royal blue
+            middle: "#4B0082", // Deep purple
+            boss: "#FF0000", // Red
+            path: "#228B22", // Forest Green (base for random shades)
+            offshoot: "#FFD700", // Gold (base for random shades)
+        }),
+        []
+    );
 
     const generateRandomGreenShade = () => {
         const r = Math.floor(Math.random() * 100); // 0-100 for darker greens
@@ -87,9 +90,9 @@ export default function DungeonDisplay() {
         return `rgb(${r},${g},${b})`;
     };
 
-    const generateDungeon = () => {
+    const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator();
-        const rooms = generator.createShortestPath(roomCount, {
+        const generatedRooms = generator.createShortestPath(roomCount, {
             ...roomSizes,
             hasMiddleRoom,
             randomRooms: [
@@ -98,35 +101,30 @@ export default function DungeonDisplay() {
                 { width: 3, height: 1 },
             ],
         });
-        let generatedRooms = generator.createOffshoots(
-            offshoots.count,
-            offshoots.depth
+        setRooms(
+            generatedRooms.map((room) => ({
+                ...room,
+                color:
+                    room.id === "start"
+                        ? roomTypeColors.start
+                        : room.id === "north-start"
+                            ? roomTypeColors.north
+                            : room.id === "middle-room"
+                                ? roomTypeColors.middle
+                                : room.id === "boss-room"
+                                    ? roomTypeColors.boss
+                                    : room.id.startsWith("offshoot")
+                                        ? generateRandomYellowShade()
+                                        : generateRandomGreenShade(),
+            }))
         );
-
-        const roomsWithColors = generatedRooms.map((room) => ({
-            ...room,
-            color:
-                room.id === "start-room"
-                    ? roomTypeColors.start
-                    : room.id === "north-room"
-                        ? roomTypeColors.north
-                        : room.id === "middle-room"
-                            ? roomTypeColors.middle
-                            : room.id === "boss-room"
-                                ? roomTypeColors.boss
-                                : room.id.startsWith("offshoot")
-                                    ? generateRandomYellowShade()
-                                    : generateRandomGreenShade(),
-        }));
-        setRooms(roomsWithColors);
         setPlayerPos({ x: CENTER_POINT, y: CENTER_POINT });
         setViewOffset({ x: 0, y: 0 });
-    };
+    }, [roomCount, hasMiddleRoom, roomSizes, roomTypeColors]);
 
-    // Generate dungeon once on mount
     useEffect(() => {
         generateDungeon();
-    }, []);
+    }, [generateDungeon]);
 
     // Handle rendering and movement
     useEffect(() => {
@@ -180,7 +178,7 @@ export default function DungeonDisplay() {
 
                 // Draw doors
                 ctx.fillStyle = "#8B4513"; // Saddle brown color
-                room.doors.forEach((door: any) => {
+                room.doors.forEach((door: { x: number; y: number }) => {
                     ctx.fillRect(
                         door.x * scale + offsetX,
                         door.y * scale + offsetY,
@@ -203,22 +201,19 @@ export default function DungeonDisplay() {
             ctx.fill();
         };
 
-        drawGame();
-
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Movement keys for player
             if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-                e.preventDefault(); // Prevent browser scrolling
+                e.preventDefault();
                 const currentRoom = rooms.find((room) =>
                     room.cells.some(
-                        (cell: any) => cell.x === playerPos.x && cell.y === playerPos.y
+                        (cell: { x: number; y: number }) =>
+                            cell.x === playerPos.x && cell.y === playerPos.y
                     )
                 );
 
                 if (!currentRoom) return;
 
                 const canMove = (newX: number, newY: number) => {
-                    // Find the room we're trying to move into
                     const targetRoom = rooms.find((room) =>
                         room.cells.some((cell) => cell.x === newX && cell.y === newY)
                     );
@@ -227,27 +222,6 @@ export default function DungeonDisplay() {
                         console.log("No target room found at", { newX, newY });
                         return false;
                     }
-
-                    console.log(
-                        "Current room:",
-                        currentRoom.id,
-                        "doors:",
-                        currentRoom.doors
-                    );
-                    console.log(rooms);
-                    console.log(JSON.stringify(rooms));
-                    console.log(
-                        "Target room:",
-                        targetRoom.id,
-                        "doors:",
-                        targetRoom.doors
-                    );
-                    console.log(
-                        "Trying to move from",
-                        { x: playerPos.x, y: playerPos.y },
-                        "to",
-                        { newX, newY }
-                    );
 
                     // If moving within the same room, always allow it
                     if (currentRoom === targetRoom) {
@@ -263,16 +237,13 @@ export default function DungeonDisplay() {
                     };
 
                     // Check if there's a matching pair of doors
-                    const hasMatchingDoors = currentRoom.doors.some((currentDoor) => {
+                    return currentRoom.doors.some((currentDoor) => {
                         return targetRoom.doors.some((targetDoor) => {
                             // For vertical movement (north/south), doors should be at same x but adjacent y
                             // For horizontal movement (east/west), doors should be at same y but adjacent x
                             const isVerticalMovement =
                                 currentDoor.direction === "north" ||
                                 currentDoor.direction === "south";
-                            const isHorizontalMovement =
-                                currentDoor.direction === "east" ||
-                                currentDoor.direction === "west";
 
                             const samePosition = isVerticalMovement
                                 ? currentDoor.x === targetDoor.x &&
@@ -296,15 +267,6 @@ export default function DungeonDisplay() {
                                 (currentDoor.x === newX && currentDoor.y === newY) ||
                                 (targetDoor.x === newX && targetDoor.y === newY);
 
-                            console.log("Door check:", {
-                                currentDoor,
-                                targetDoor,
-                                samePosition,
-                                oppositeDirection,
-                                isAtCurrentPosition,
-                                isAtTargetPosition,
-                            });
-
                             return (
                                 samePosition &&
                                 oppositeDirection &&
@@ -312,12 +274,9 @@ export default function DungeonDisplay() {
                             );
                         });
                     });
-
-                    console.log("Has matching doors:", hasMatchingDoors);
-                    return hasMatchingDoors;
                 };
 
-                let newPos = { ...playerPos };
+                const newPos = { ...playerPos };
 
                 switch (e.key) {
                     case "ArrowUp":
@@ -364,6 +323,8 @@ export default function DungeonDisplay() {
         };
 
         window.addEventListener("keydown", handleKeyDown);
+        drawGame();
+
         return () => {
             window.removeEventListener("keydown", handleKeyDown);
         };
@@ -388,7 +349,6 @@ export default function DungeonDisplay() {
     const [currentPath, setCurrentPath] = useState<string[]>([]);
 
     useEffect(() => {
-        // Update current room type and path when player moves
         const room = rooms.find((room) =>
             room.cells.some(
                 (cell) => cell.x === playerPos.x && cell.y === playerPos.y
@@ -396,18 +356,15 @@ export default function DungeonDisplay() {
         );
         if (room) {
             let type = "path";
-            if (room.id === "start-room") type = "start";
-            else if (room.id === "north-room") type = "north";
+            if (room.id === "start") type = "start";
+            else if (room.id === "north-start") type = "north";
             else if (room.id === "middle-room") type = "middle";
             else if (room.id === "boss-room") type = "boss";
             else if (room.id.startsWith("offshoot")) type = "offshoot";
             setCurrentRoomType(type);
 
-            // Build path
-            const path = [];
-            let currentId = room.id;
-            path.push(currentId);
-            setCurrentPath(path);
+            const currentId = room.id;
+            setCurrentPath([currentId]);
         }
     }, [playerPos, rooms]);
 
@@ -512,7 +469,8 @@ export default function DungeonDisplay() {
                                 <div className="grid grid-cols-2 gap-4">
                                     {(["Start", "North", "Middle", "Boss"] as const).map(
                                         (roomType) => {
-                                            const key = `${roomType.toLowerCase()}Room` as RoomSizeKey;
+                                            const key =
+                                                `${roomType.toLowerCase()}Room` as RoomSizeKey;
                                             return (
                                                 <div key={roomType} className="space-y-2">
                                                     <label className="text-sm text-gray-300 block">
@@ -639,7 +597,8 @@ export default function DungeonDisplay() {
                         <div className="flex items-center gap-4">
                             <div className="text-sm text-white">Current Room:</div>
                             <div className="px-3 py-1 bg-gray-700 rounded text-white">
-                                {currentRoomType.charAt(0).toUpperCase() + currentRoomType.slice(1)}
+                                {currentRoomType.charAt(0).toUpperCase() +
+                                    currentRoomType.slice(1)}
                                 {" - "}
                                 {currentPath[0] || "None"}
                             </div>
