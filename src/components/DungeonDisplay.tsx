@@ -28,7 +28,7 @@ interface RoomWithColor extends Room {
 
 const CENTER_POINT = 50;
 
-type RoomType = "start" | "north" | "middle" | "boss";
+type RoomType = "start" | "gnellen" | "middle" | "boss";
 type RoomSizeKey = `${RoomType}Room`;
 
 interface RoomSizes {
@@ -67,7 +67,7 @@ export default function DungeonDisplay() {
     const roomTypeColors = useMemo(
         () => ({
             start: "#32CD32", // Lime green
-            north: "#4169E1", // Royal blue
+            gnellen: "#4169E1", // Royal blue
             middle: "#4B0082", // Deep purple
             boss: "#FF0000", // Red
             path: "#228B22", // Forest Green (base for random shades)
@@ -109,7 +109,7 @@ export default function DungeonDisplay() {
                     room.id === "start"
                         ? roomTypeColors.start
                         : room.id === "gnellen-start"
-                            ? roomTypeColors.north
+                            ? roomTypeColors.gnellen
                             : room.id === "middle-room"
                                 ? roomTypeColors.middle
                                 : room.id === "boss-room"
@@ -416,7 +416,7 @@ export default function DungeonDisplay() {
         if (room) {
             let type = "path";
             if (room.id === "start") type = "start";
-            else if (room.id === "gnellen-start") type = "north";
+            else if (room.id === "gnellen-start") type = "gnellen";
             else if (room.id === "middle-room") type = "middle";
             else if (room.id === "boss-room") type = "boss";
             else if (room.id.startsWith("offshoot")) type = "offshoot";
@@ -522,10 +522,16 @@ export default function DungeonDisplay() {
                                     Special Rooms
                                 </h3>
                                 <div className="grid grid-cols-2 gap-4">
-                                    {(["Start", "North", "Middle", "Boss"] as const).map(
+                                    {(["Start", "GnellenStart", "Middle", "Boss"] as const).map(
                                         (roomType) => {
                                             const key =
-                                                `${roomType.toLowerCase()}Room` as RoomSizeKey;
+                                                roomType === "Start"
+                                                    ? "startRoom"
+                                                    : roomType === "GnellenStart"
+                                                        ? "gnellenStartRoom"
+                                                        : roomType === "Middle"
+                                                            ? "middleRoom"
+                                                            : "bossRoom";
                                             return (
                                                 <div key={roomType} className="space-y-2">
                                                     <label className="text-sm text-gray-300 block">
@@ -669,9 +675,9 @@ export default function DungeonDisplay() {
                             <div className="flex items-center gap-2">
                                 <div
                                     className="w-4 h-4 rounded"
-                                    style={{ backgroundColor: roomTypeColors.north }}
+                                    style={{ backgroundColor: roomTypeColors.gnellen }}
                                 />
-                                <span className="text-sm text-gray-300">North</span>
+                                <span className="text-sm text-gray-300">Gnellen</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <div
@@ -725,7 +731,6 @@ export default function DungeonDisplay() {
                             onChange={(e) => setScale(Number(e.target.value))}
                             className="flex-1"
                         />
-                        <span className="text-sm text-gray-300 w-12">{scale}x</span>
                     </div>
                 </div>
             </div>
