@@ -283,8 +283,8 @@ export class DungeonGenerator {
             const directions =
               i === 0
                 ? [
-                    { dx: 1, dy: 0, dir: "west" },
-                    { dx: 0, dy: 1, dir: "north" },
+                    // { dx: 1, dy: 0, dir: "west" },
+                    // { dx: 0, dy: 1, dir: "north" },
                     { dx: -1, dy: 0, dir: "east" },
                   ]
                 : [

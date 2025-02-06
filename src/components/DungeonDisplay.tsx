@@ -437,6 +437,76 @@ export default function DungeonDisplay() {
         }
     }, [playerPos, rooms]);
 
+    // Add state for JSON modal
+    const [jsonModalOpen, setJsonModalOpen] = useState(false);
+    const [jsonData, setJsonData] = useState<string>("");
+
+    // Modify the export function to show modal instead of direct download
+    const viewRoomsAsJson = () => {
+        const roomsData = rooms.map((room) => ({
+            id: room.id,
+            type: room.type,
+            width: room.width,
+            height: room.height,
+            x: room.x,
+            y: room.y,
+            cells: room.cells,
+            doors: room.doors,
+        }));
+
+        const dataStr = JSON.stringify(roomsData, null, 2);
+        setJsonData(dataStr);
+        setJsonModalOpen(true);
+    };
+
+    // Function to export JSON from modal
+    const exportJsonFromModal = () => {
+        const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(
+            jsonData
+        )}`;
+
+        const exportFileDefaultName = `dungeon-rooms-${Date.now()}.json`;
+
+        const linkElement = document.createElement("a");
+        linkElement.setAttribute("href", dataUri);
+        linkElement.setAttribute("download", exportFileDefaultName);
+        linkElement.click();
+    };
+
+    // JSON Modal Component
+    const JsonModal = () => {
+        if (!jsonModalOpen) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+                <div className="bg-gray-800 rounded-lg w-full max-w-4xl max-h-[80vh] flex flex-col">
+                    <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+                        <h2 className="text-xl font-bold text-white">Dungeon Rooms JSON</h2>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={exportJsonFromModal}
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                            >
+                                Export JSON
+                            </button>
+                            <button
+                                onClick={() => setJsonModalOpen(false)}
+                                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                    <div className="p-4 overflow-auto flex-grow">
+                        <pre className="bg-gray-900 p-4 rounded text-green-400 text-sm whitespace-pre-wrap break-words">
+                            {jsonData}
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="flex flex-col items-center gap-4 p-6 bg-gray-900 min-h-screen relative">
             {/* Config Panel */}
@@ -920,13 +990,24 @@ export default function DungeonDisplay() {
                 </div>
             </div>
 
-            {/* Fixed Regenerate Button */}
-            <button
-                onClick={generateDungeon}
-                className="fixed bottom-6 right-6 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-lg z-50"
-            >
-                Regenerate Dungeon
-            </button>
+            {/* Fixed Buttons */}
+            <div className="fixed bottom-6 right-6 flex gap-4 z-50">
+                <button
+                    onClick={viewRoomsAsJson}
+                    className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-lg"
+                >
+                    View JSON
+                </button>
+                <button
+                    onClick={generateDungeon}
+                    className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-lg"
+                >
+                    Regenerate Dungeon
+                </button>
+            </div>
+
+            {/* JSON Modal */}
+            <JsonModal />
         </div>
     );
 }
