@@ -17,13 +17,19 @@ interface Room {
   doors: Door[];
 }
 
+interface StaticRoomPosition {
+  width: number;
+  height: number;
+  stepsFromPrevious: number;
+  index: number;
+}
+
 interface RoomSizes {
   startRoom: { width: number; height: number };
   gnellenStartRoom: { width: number; height: number };
-  middleRoom: { width: number; height: number };
+  staticRoomPositions: StaticRoomPosition[];
   bossRoom: { width: number; height: number };
   randomRooms: Array<{ width: number; height: number }>;
-  hasMiddleRoom?: boolean;
 }
 
 interface RoomTemplate {
@@ -235,18 +241,23 @@ export class DungeonGenerator {
 
         const startRooms = this.createStartRooms(roomSizes);
         let lastRoom = startRooms[0];
-        const middleRoomIndex = Math.floor(pathLength / 2);
+        let currentStep = 0;
+        let nextStaticRoomIndex = 0;
 
         for (let i = 0; i < pathLength; i++) {
           let roomTypes = roomSizes.randomRooms;
           const isBossRoom = i === pathLength - 1;
+          const nextStaticRoom =
+            roomSizes.staticRoomPositions[nextStaticRoomIndex];
+          const isStaticRoom =
+            nextStaticRoom && currentStep === nextStaticRoom.stepsFromPrevious;
 
-          // Force middle room size at the middle point if enabled
-          if (roomSizes.hasMiddleRoom && i === middleRoomIndex) {
+          // Force static room or boss room size
+          if (isStaticRoom) {
             roomTypes = [
               {
-                width: roomSizes.middleRoom.width,
-                height: roomSizes.middleRoom.height,
+                width: nextStaticRoom.width,
+                height: nextStaticRoom.height,
               },
             ];
           } else if (isBossRoom) {
@@ -264,9 +275,7 @@ export class DungeonGenerator {
 
           while (!placed && attempts < maxAttempts) {
             const template: RoomTemplate =
-              i === middleRoomIndex
-                ? roomTypes[0]
-                : isBossRoom
+              isStaticRoom || isBossRoom
                 ? roomTypes[0]
                 : roomTypes[Math.floor(Math.random() * roomTypes.length)];
 
@@ -308,12 +317,11 @@ export class DungeonGenerator {
                   ];
 
             const newRoom: Room = {
-              id:
-                i === middleRoomIndex
-                  ? "middle-room"
-                  : isBossRoom
-                  ? "boss-room"
-                  : `room-${i}`,
+              id: isStaticRoom
+                ? `static-room-${nextStaticRoomIndex}`
+                : isBossRoom
+                ? "boss-room"
+                : `room-${i}`,
               type: "2x2",
               width: template.width,
               height: template.height,
@@ -372,6 +380,13 @@ export class DungeonGenerator {
               this.rooms.push(validRoom);
               lastRoom = validRoom;
               placed = true;
+
+              if (isStaticRoom) {
+                nextStaticRoomIndex++;
+                currentStep = 0;
+              } else {
+                currentStep++;
+              }
             }
             attempts++;
           }
