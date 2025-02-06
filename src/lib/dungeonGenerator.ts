@@ -23,6 +23,7 @@ interface RoomSizes {
   middleRoom: { width: number; height: number };
   bossRoom: { width: number; height: number };
   randomRooms: Array<{ width: number; height: number }>;
+  hasMiddleRoom?: boolean;
 }
 
 interface RoomTemplate {
@@ -40,27 +41,107 @@ export class DungeonGenerator {
     );
   }
 
-  private canPlaceRoom(room: Room): boolean {
-    for (let dx = 0; dx < room.width; dx++) {
-      for (let dy = 0; dy < room.height; dy++) {
-        const checkX = room.x + dx;
-        const checkY = room.y + dy;
+  private canPlaceRoom(
+    width: number,
+    height: number,
+    x: number,
+    y: number,
+    lastRoom: Room,
+    lastRoomCell: { x: number; y: number },
+    direction: { dx: number; dy: number; dir: string }
+  ): Room | null {
+    const possibleRooms: Room[] = [];
+    const roomTypes = ["1x3", "2x2", "1x1"] as const;
 
-        if (
-          checkX < 0 ||
-          checkX >= this.gridSize ||
-          checkY < 0 ||
-          checkY >= this.gridSize
-        ) {
-          return false;
+    // Try different positions along the direction
+    for (let offsetY = -height + 1; offsetY < height; offsetY++) {
+      for (let offsetX = -width + 1; offsetX < width; offsetX++) {
+        const tryX = x + offsetX;
+        const tryY = y + offsetY;
+        let canPlace = true;
+
+        // Check if this position works
+        for (let dx = 0; dx < width; dx++) {
+          for (let dy = 0; dy < height; dy++) {
+            const checkX = tryX + dx;
+            const checkY = tryY + dy;
+
+            if (
+              checkX < 0 ||
+              checkX >= this.gridSize ||
+              checkY < 0 ||
+              checkY >= this.gridSize ||
+              this.grid[checkY][checkX]
+            ) {
+              canPlace = false;
+              break;
+            }
+          }
+          if (!canPlace) break;
         }
 
-        if (this.grid[checkY][checkX]) {
-          return false;
+        // Check if both door positions would be valid
+        const doorX = lastRoomCell.x + direction.dx;
+        const doorY = lastRoomCell.y + direction.dy;
+        const wouldHaveDoorCell =
+          tryX <= doorX &&
+          doorX < tryX + width &&
+          tryY <= doorY &&
+          doorY < tryY + height;
+
+        // Check if both doors can be placed
+        const canPlaceFirstDoor = this.isValidDoorPosition(
+          lastRoom,
+          lastRoomCell.x,
+          lastRoomCell.y
+        );
+        const tempRoom: Room = {
+          id: "temp",
+          type: "2x2",
+          width,
+          height,
+          x: tryX,
+          y: tryY,
+          cells: [],
+          doors: [],
+        };
+        // Mark cells for the temporary room
+        for (let dx = 0; dx < width; dx++) {
+          for (let dy = 0; dy < height; dy++) {
+            tempRoom.cells.push({ x: tryX + dx, y: tryY + dy });
+          }
+        }
+        const canPlaceSecondDoor = this.isValidDoorPosition(
+          tempRoom,
+          doorX,
+          doorY
+        );
+
+        if (
+          canPlace &&
+          wouldHaveDoorCell &&
+          canPlaceFirstDoor &&
+          canPlaceSecondDoor
+        ) {
+          // If we can place a room and both doors
+          possibleRooms.push({
+            id: `room-${Math.random().toString(36).substr(2, 9)}`,
+            type: roomTypes[Math.floor(Math.random() * roomTypes.length)],
+            width,
+            height,
+            x: tryX,
+            y: tryY,
+            cells: [],
+            doors: [],
+          });
         }
       }
     }
-    return true;
+
+    // Return a random valid position if any exist
+    return possibleRooms.length > 0
+      ? possibleRooms[Math.floor(Math.random() * possibleRooms.length)]
+      : null;
   }
 
   private markRoomOnGrid(room: Room) {
@@ -75,6 +156,37 @@ export class DungeonGenerator {
     }
   }
 
+  private isValidDirection(
+    x: number,
+    y: number,
+    dx: number,
+    dy: number
+  ): boolean {
+    const checkX = x + dx;
+    const checkY = y + dy;
+
+    if (
+      checkX < 0 ||
+      checkX >= this.gridSize ||
+      checkY < 0 ||
+      checkY >= this.gridSize
+    ) {
+      return false;
+    }
+
+    return !this.grid[checkY][checkX];
+  }
+
+  private isValidDoorPosition(room: Room, x: number, y: number): boolean {
+    // First check if the cell exists in the room
+    const hasCell = room.cells.some((cell) => cell.x === x && cell.y === y);
+    if (!hasCell) return false;
+
+    // Then check if there's already a door at this position
+    const hasDoor = room.doors.some((door) => door.x === x && door.y === y);
+    return !hasDoor;
+  }
+
   createStartRooms(roomSizes: RoomSizes): Room[] {
     const startRoom: Room = {
       id: "start",
@@ -85,7 +197,7 @@ export class DungeonGenerator {
       y: 50,
       cells: [],
       doors: [
-        { x: 50, y: 49, direction: "north" }, // Door to the north room
+        // { x: 50, y: 49, direction: "north" }, // Door to the north room
       ],
     };
 
@@ -103,8 +215,11 @@ export class DungeonGenerator {
     };
 
     this.markRoomOnGrid(startRoom);
-    this.markRoomOnGrid(northRoom);
-    this.rooms.push(startRoom, northRoom);
+    // this.markRoomOnGrid(northRoom);
+    this.rooms.push(
+      startRoom
+      // northRoom
+    );
 
     return [startRoom, northRoom];
   }
@@ -129,8 +244,8 @@ export class DungeonGenerator {
           let roomTypes = roomSizes.randomRooms;
           let isBossRoom = i === pathLength - 1;
 
-          // Force middle room size at the middle point
-          if (i === middleRoomIndex) {
+          // Force middle room size at the middle point if enabled
+          if (roomSizes.hasMiddleRoom && i === middleRoomIndex) {
             roomTypes = [
               {
                 width: roomSizes.middleRoom.width,
@@ -162,19 +277,30 @@ export class DungeonGenerator {
             const directions =
               i === 0
                 ? [
-                    { dx: 1, dy: 0, dir: "west" }, // right
-                    { dx: 0, dy: 1, dir: "north" }, // down
-                    { dx: -1, dy: 0, dir: "east" }, // left
+                    { dx: 1, dy: 0, dir: "west" },
+                    { dx: 0, dy: 1, dir: "north" },
+                    { dx: -1, dy: 0, dir: "east" },
                   ]
                 : [
-                    { dx: 1, dy: 0, dir: "west" }, // right
-                    { dx: -1, dy: 0, dir: "east" }, // left
-                    { dx: 0, dy: -1, dir: "south" }, // up
-                    { dx: 0, dy: 1, dir: "north" }, // down
+                    { dx: 1, dy: 0, dir: "west" },
+                    { dx: -1, dy: 0, dir: "east" },
+                    { dx: 0, dy: -1, dir: "south" },
+                    { dx: 0, dy: 1, dir: "north" },
                   ];
 
+            const validDirections = directions.filter((dir) =>
+              this.isValidDirection(lastRoom.x, lastRoom.y, dir.dx, dir.dy)
+            );
+
+            if (validDirections.length === 0) {
+              attempts++;
+              continue;
+            }
+
             const direction =
-              directions[Math.floor(Math.random() * directions.length)];
+              validDirections[
+                Math.floor(Math.random() * validDirections.length)
+              ];
 
             // For first room, always connect from the start room's center
             const lastRoomCell =
@@ -191,7 +317,7 @@ export class DungeonGenerator {
                   : isBossRoom
                   ? "boss-room"
                   : `room-${i}`,
-              type: "2x2", // Default type, actual dimensions come from template
+              type: "2x2",
               width: template.width,
               height: template.height,
               x: lastRoomCell.x + direction.dx,
@@ -199,9 +325,18 @@ export class DungeonGenerator {
               cells: [],
               doors: [],
             };
-
-            if (this.canPlaceRoom(newRoom)) {
-              this.markRoomOnGrid(newRoom);
+            const validRoom = this.canPlaceRoom(
+              template.width,
+              template.height,
+              newRoom.x,
+              newRoom.y,
+              lastRoom,
+              lastRoomCell,
+              direction
+            );
+            if (validRoom) {
+              validRoom.id = newRoom.id;
+              this.markRoomOnGrid(validRoom);
 
               const doorDirection = direction.dir as DoorDirection;
               const oppositeDirections: Record<DoorDirection, DoorDirection> = {
@@ -212,21 +347,33 @@ export class DungeonGenerator {
               };
 
               // Add door to the last room at the connection point
-              lastRoom.doors.push({
-                x: lastRoomCell.x,
-                y: lastRoomCell.y,
-                direction: doorDirection,
-              });
+              if (
+                this.isValidDoorPosition(
+                  lastRoom,
+                  lastRoomCell.x,
+                  lastRoomCell.y
+                )
+              ) {
+                lastRoom.doors.push({
+                  x: lastRoomCell.x,
+                  y: lastRoomCell.y,
+                  direction: doorDirection,
+                });
+              }
 
               // Add matching door to the new room
-              newRoom.doors.push({
-                x: lastRoomCell.x + direction.dx,
-                y: lastRoomCell.y + direction.dy,
-                direction: oppositeDirections[doorDirection],
-              });
+              const newDoorX = lastRoomCell.x + direction.dx;
+              const newDoorY = lastRoomCell.y + direction.dy;
+              if (this.isValidDoorPosition(validRoom, newDoorX, newDoorY)) {
+                validRoom.doors.push({
+                  x: newDoorX,
+                  y: newDoorY,
+                  direction: oppositeDirections[doorDirection],
+                });
+              }
 
-              this.rooms.push(newRoom);
-              lastRoom = newRoom;
+              this.rooms.push(validRoom);
+              lastRoom = validRoom;
               placed = true;
             }
             attempts++;
@@ -261,7 +408,6 @@ export class DungeonGenerator {
       );
 
       if (availableRooms.length === 0) {
-        console.log("No available rooms for offshoots");
         break;
       }
 
@@ -286,13 +432,23 @@ export class DungeonGenerator {
           const randomRoom =
             roomTypes[Math.floor(Math.random() * roomTypes.length)];
           const directions = [
-            { dx: 1, dy: 0, dir: "west" }, // right
-            { dx: -1, dy: 0, dir: "east" }, // left
-            { dx: 0, dy: -1, dir: "south" }, // up
-            { dx: 0, dy: 1, dir: "north" }, // down
+            { dx: 1, dy: 0, dir: "west" },
+            { dx: -1, dy: 0, dir: "east" },
+            { dx: 0, dy: -1, dir: "south" },
+            { dx: 0, dy: 1, dir: "north" },
           ];
+
+          const validDirections = directions.filter((dir) =>
+            this.isValidDirection(currentRoom.x, currentRoom.y, dir.dx, dir.dy)
+          );
+
+          if (validDirections.length === 0) {
+            attempts++;
+            continue;
+          }
+
           const direction =
-            directions[Math.floor(Math.random() * directions.length)];
+            validDirections[Math.floor(Math.random() * validDirections.length)];
 
           // Pick a random cell from the current room to connect from
           const currentRoomCell =
@@ -311,8 +467,18 @@ export class DungeonGenerator {
             doors: [],
           };
 
-          if (this.canPlaceRoom(newRoom)) {
-            this.markRoomOnGrid(newRoom);
+          const validRoom = this.canPlaceRoom(
+            randomRoom.width,
+            randomRoom.height,
+            newRoom.x,
+            newRoom.y,
+            currentRoom,
+            currentRoomCell,
+            direction
+          );
+          if (validRoom) {
+            validRoom.id = newRoom.id;
+            this.markRoomOnGrid(validRoom);
 
             const doorDirection = direction.dir as DoorDirection;
             const oppositeDirections: Record<DoorDirection, DoorDirection> = {
@@ -323,20 +489,32 @@ export class DungeonGenerator {
             };
 
             // Add doors between rooms
-            currentRoom.doors.push({
-              x: currentRoomCell.x,
-              y: currentRoomCell.y,
-              direction: doorDirection,
-            });
+            if (
+              this.isValidDoorPosition(
+                currentRoom,
+                currentRoomCell.x,
+                currentRoomCell.y
+              )
+            ) {
+              currentRoom.doors.push({
+                x: currentRoomCell.x,
+                y: currentRoomCell.y,
+                direction: doorDirection,
+              });
+            }
 
-            newRoom.doors.push({
-              x: currentRoomCell.x + direction.dx,
-              y: currentRoomCell.y + direction.dy,
-              direction: oppositeDirections[doorDirection],
-            });
+            const newDoorX = currentRoomCell.x + direction.dx;
+            const newDoorY = currentRoomCell.y + direction.dy;
+            if (this.isValidDoorPosition(validRoom, newDoorX, newDoorY)) {
+              validRoom.doors.push({
+                x: newDoorX,
+                y: newDoorY,
+                direction: oppositeDirections[doorDirection],
+              });
+            }
 
-            this.rooms.push(newRoom);
-            currentRoom = newRoom;
+            this.rooms.push(validRoom);
+            currentRoom = validRoom;
             placed = true;
           }
           attempts++;

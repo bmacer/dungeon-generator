@@ -49,7 +49,8 @@ export default function DungeonDisplay() {
     const [scale, setScale] = useState(20);
     const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
     const [roomCount, setRoomCount] = useState(10);
-    const [offshoots, setOffshoots] = useState({ count: 3, depth: 4 });
+    const [offshoots, setOffshoots] = useState({ count: 0, depth: 0 });
+    const [hasMiddleRoom, setHasMiddleRoom] = useState(false);
     const [roomSizes, setRoomSizes] = useState<RoomSizes>({
         startRoom: { width: 2, height: 2 },
         northRoom: { width: 2, height: 2 },
@@ -87,9 +88,20 @@ export default function DungeonDisplay() {
     };
 
     const generateDungeon = () => {
-        const dungeon = new DungeonGenerator();
-        let generatedRooms = dungeon.createShortestPath(roomCount, roomSizes);
-        generatedRooms = dungeon.createOffshoots(offshoots.count, offshoots.depth);
+        const generator = new DungeonGenerator();
+        const rooms = generator.createShortestPath(roomCount, {
+            ...roomSizes,
+            hasMiddleRoom,
+            randomRooms: [
+                { width: 2, height: 2 },
+                { width: 1, height: 3 },
+                { width: 3, height: 1 },
+            ],
+        });
+        let generatedRooms = generator.createOffshoots(
+            offshoots.count,
+            offshoots.depth
+        );
 
         const roomsWithColors = generatedRooms.map((room) => ({
             ...room,
@@ -223,6 +235,7 @@ export default function DungeonDisplay() {
                         currentRoom.doors
                     );
                     console.log(rooms);
+                    console.log(JSON.stringify(rooms));
                     console.log(
                         "Target room:",
                         targetRoom.id,
@@ -371,9 +384,11 @@ export default function DungeonDisplay() {
     };
 
     const [currentRoomType, setCurrentRoomType] = useState<string>("start");
+    const [showConfig, setShowConfig] = useState(false);
+    const [currentPath, setCurrentPath] = useState<string[]>([]);
 
     useEffect(() => {
-        // Update current room type when player moves
+        // Update current room type and path when player moves
         const room = rooms.find((room) =>
             room.cells.some(
                 (cell) => cell.x === playerPos.x && cell.y === playerPos.y
@@ -387,229 +402,249 @@ export default function DungeonDisplay() {
             else if (room.id === "boss-room") type = "boss";
             else if (room.id.startsWith("offshoot")) type = "offshoot";
             setCurrentRoomType(type);
+
+            // Build path
+            const path = [];
+            let currentId = room.id;
+            path.push(currentId);
+            setCurrentPath(path);
         }
     }, [playerPos, rooms]);
 
     return (
-        <div className="flex flex-col items-center gap-4 p-6 bg-gray-900 min-h-screen">
+        <div className="flex flex-col items-center gap-4 p-6 bg-gray-900 min-h-screen relative">
+            {/* Config Panel */}
             <div className="w-full max-w-4xl">
-                <div className="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-bold text-white">
-                            Dungeon Configuration
-                        </h2>
-                        <button
-                            onClick={generateDungeon}
-                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                        >
-                            Regenerate Dungeon
-                        </button>
-                    </div>
+                <button
+                    onClick={() => setShowConfig(!showConfig)}
+                    className="mb-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
+                >
+                    {showConfig ? "Hide" : "Show"} Configuration
+                    <span className="text-sm">{showConfig ? "▼" : "▶"}</span>
+                </button>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Basic Settings */}
-                        <div className="bg-gray-700 rounded-lg p-4">
-                            <h3 className="text-lg font-semibold text-white mb-4">
-                                Basic Settings
-                            </h3>
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-4">
-                                    <label
-                                        htmlFor="roomCount"
-                                        className="text-sm text-gray-300 w-24"
-                                    >
-                                        Room Count:
-                                    </label>
-                                    <input
-                                        id="roomCount"
-                                        type="number"
-                                        min="5"
-                                        max="30"
-                                        value={roomCount}
-                                        onChange={(e) => setRoomCount(Number(e.target.value))}
-                                        className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <label
-                                        htmlFor="offshoots"
-                                        className="text-sm text-gray-300 w-24"
-                                    >
-                                        Offshoots:
-                                    </label>
-                                    <input
-                                        id="offshoots"
-                                        type="number"
-                                        min="0"
-                                        max="10"
-                                        value={offshoots.count}
-                                        onChange={(e) =>
-                                            setOffshoots((prev) => ({
-                                                ...prev,
-                                                count: Number(e.target.value),
-                                            }))
-                                        }
-                                        className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <label
-                                        htmlFor="offshootDepth"
-                                        className="text-sm text-gray-300 w-24"
-                                    >
-                                        Depth:
-                                    </label>
-                                    <input
-                                        id="offshootDepth"
-                                        type="number"
-                                        min="1"
-                                        max="10"
-                                        value={offshoots.depth}
-                                        onChange={(e) =>
-                                            setOffshoots((prev) => ({
-                                                ...prev,
-                                                depth: Number(e.target.value),
-                                            }))
-                                        }
-                                        className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
-                                    />
-                                </div>
-                            </div>
+                {showConfig && (
+                    <div className="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-bold text-white">
+                                Dungeon Configuration
+                            </h2>
                         </div>
-
-                        {/* Special Rooms */}
-                        <div className="bg-gray-700 rounded-lg p-4">
-                            <h3 className="text-lg font-semibold text-white mb-4">
-                                Special Rooms
-                            </h3>
-                            <div className="grid grid-cols-2 gap-4">
-                                {(["Start", "North", "Middle", "Boss"] as const).map(
-                                    (roomType) => {
-                                        const key = `${roomType.toLowerCase()}Room` as RoomSizeKey;
-                                        return (
-                                            <div key={roomType} className="space-y-2">
-                                                <label className="text-sm text-gray-300 block">
-                                                    {roomType} Room
-                                                </label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        max="6"
-                                                        value={roomSizes[key].width}
-                                                        onChange={(e) =>
-                                                            setRoomSizes((prev) => ({
-                                                                ...prev,
-                                                                [key]: {
-                                                                    ...prev[key],
-                                                                    width: Number(e.target.value),
-                                                                },
-                                                            }))
-                                                        }
-                                                        className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
-                                                    />
-                                                    <span className="text-gray-300">×</span>
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        max="6"
-                                                        value={roomSizes[key].height}
-                                                        onChange={(e) =>
-                                                            setRoomSizes((prev) => ({
-                                                                ...prev,
-                                                                [key]: {
-                                                                    ...prev[key],
-                                                                    height: Number(e.target.value),
-                                                                },
-                                                            }))
-                                                        }
-                                                        className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    }
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Random Room Templates */}
-                        <div className="bg-gray-700 rounded-lg p-4 col-span-2">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-white">
-                                    Random Room Templates
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Basic Settings */}
+                            <div className="bg-gray-700 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-white mb-4">
+                                    Basic Settings
                                 </h3>
-                                <button
-                                    onClick={addRandomRoom}
-                                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm"
-                                >
-                                    Add Template
-                                </button>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                {roomSizes.randomRooms.map((room, index) => (
-                                    <div
-                                        key={index}
-                                        className="relative bg-gray-600 p-4 rounded-lg"
-                                    >
-                                        <button
-                                            onClick={() => removeRandomRoom(index)}
-                                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors flex items-center justify-center"
-                                        >
-                                            ×
-                                        </button>
-                                        <label className="text-sm text-gray-300 block mb-2">
-                                            Template {index + 1}
+                                <div className="space-y-4">
+                                    <div className="flex gap-4 items-center mb-4">
+                                        <label>
+                                            Room Count:
+                                            <input
+                                                type="number"
+                                                value={roomCount}
+                                                onChange={(e) => setRoomCount(parseInt(e.target.value))}
+                                                className="ml-2 p-1 border rounded"
+                                            />
                                         </label>
-                                        <div className="flex gap-2">
+                                        <label className="flex items-center">
                                             <input
-                                                type="number"
-                                                min="1"
-                                                max="4"
-                                                value={room.width}
-                                                onChange={(e) =>
-                                                    setRoomSizes((prev) => ({
-                                                        ...prev,
-                                                        randomRooms: prev.randomRooms.map((r, i) =>
-                                                            i === index
-                                                                ? { ...r, width: Number(e.target.value) }
-                                                                : r
-                                                        ),
-                                                    }))
-                                                }
-                                                className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
+                                                type="checkbox"
+                                                checked={hasMiddleRoom}
+                                                onChange={(e) => setHasMiddleRoom(e.target.checked)}
+                                                className="mr-2"
                                             />
-                                            <span className="text-gray-300">×</span>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                max="4"
-                                                value={room.height}
-                                                onChange={(e) =>
-                                                    setRoomSizes((prev) => ({
-                                                        ...prev,
-                                                        randomRooms: prev.randomRooms.map((r, i) =>
-                                                            i === index
-                                                                ? { ...r, height: Number(e.target.value) }
-                                                                : r
-                                                        ),
-                                                    }))
-                                                }
-                                                className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
-                                            />
-                                        </div>
+                                            Has Middle Room
+                                        </label>
                                     </div>
-                                ))}
+                                    <div className="flex items-center gap-4">
+                                        <label
+                                            htmlFor="offshoots"
+                                            className="text-sm text-gray-300 w-24"
+                                        >
+                                            Offshoots:
+                                        </label>
+                                        <input
+                                            id="offshoots"
+                                            type="number"
+                                            min="0"
+                                            max="10"
+                                            value={offshoots.count}
+                                            onChange={(e) =>
+                                                setOffshoots((prev) => ({
+                                                    ...prev,
+                                                    count: Number(e.target.value),
+                                                }))
+                                            }
+                                            className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label
+                                            htmlFor="offshootDepth"
+                                            className="text-sm text-gray-300 w-24"
+                                        >
+                                            Depth:
+                                        </label>
+                                        <input
+                                            id="offshootDepth"
+                                            type="number"
+                                            min="1"
+                                            max="10"
+                                            value={offshoots.depth}
+                                            onChange={(e) =>
+                                                setOffshoots((prev) => ({
+                                                    ...prev,
+                                                    depth: Number(e.target.value),
+                                                }))
+                                            }
+                                            className="w-20 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Special Rooms */}
+                            <div className="bg-gray-700 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-white mb-4">
+                                    Special Rooms
+                                </h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {(["Start", "North", "Middle", "Boss"] as const).map(
+                                        (roomType) => {
+                                            const key = `${roomType.toLowerCase()}Room` as RoomSizeKey;
+                                            return (
+                                                <div key={roomType} className="space-y-2">
+                                                    <label className="text-sm text-gray-300 block">
+                                                        {roomType} Room
+                                                    </label>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max="6"
+                                                            value={roomSizes[key].width}
+                                                            onChange={(e) =>
+                                                                setRoomSizes((prev) => ({
+                                                                    ...prev,
+                                                                    [key]: {
+                                                                        ...prev[key],
+                                                                        width: Number(e.target.value),
+                                                                    },
+                                                                }))
+                                                            }
+                                                            className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                                        />
+                                                        <span className="text-gray-300">×</span>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max="6"
+                                                            value={roomSizes[key].height}
+                                                            onChange={(e) =>
+                                                                setRoomSizes((prev) => ({
+                                                                    ...prev,
+                                                                    [key]: {
+                                                                        ...prev[key],
+                                                                        height: Number(e.target.value),
+                                                                    },
+                                                                }))
+                                                            }
+                                                            className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Random Room Templates */}
+                            <div className="bg-gray-700 rounded-lg p-4 col-span-2">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-semibold text-white">
+                                        Random Room Templates
+                                    </h3>
+                                    <button
+                                        onClick={addRandomRoom}
+                                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm"
+                                    >
+                                        Add Template
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {roomSizes.randomRooms.map((room, index) => (
+                                        <div
+                                            key={index}
+                                            className="relative bg-gray-600 p-4 rounded-lg"
+                                        >
+                                            <button
+                                                onClick={() => removeRandomRoom(index)}
+                                                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors flex items-center justify-center"
+                                            >
+                                                ×
+                                            </button>
+                                            <label className="text-sm text-gray-300 block mb-2">
+                                                Template {index + 1}
+                                            </label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="4"
+                                                    value={room.width}
+                                                    onChange={(e) =>
+                                                        setRoomSizes((prev) => ({
+                                                            ...prev,
+                                                            randomRooms: prev.randomRooms.map((r, i) =>
+                                                                i === index
+                                                                    ? { ...r, width: Number(e.target.value) }
+                                                                    : r
+                                                            ),
+                                                        }))
+                                                    }
+                                                    className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
+                                                />
+                                                <span className="text-gray-300">×</span>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="4"
+                                                    value={room.height}
+                                                    onChange={(e) =>
+                                                        setRoomSizes((prev) => ({
+                                                            ...prev,
+                                                            randomRooms: prev.randomRooms.map((r, i) =>
+                                                                i === index
+                                                                    ? { ...r, height: Number(e.target.value) }
+                                                                    : r
+                                                            ),
+                                                        }))
+                                                    }
+                                                    className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Room Type Legend */}
                 <div className="bg-gray-800 rounded-lg p-4 mb-6 shadow-lg">
-                    <div className="flex flex-wrap gap-4 items-center">
-                        <div className="text-sm text-gray-300">Room Types:</div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                    <div className="flex flex-wrap gap-4 items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="text-sm text-white">Current Room:</div>
+                            <div className="px-3 py-1 bg-gray-700 rounded text-white">
+                                {currentRoomType.charAt(0).toUpperCase() + currentRoomType.slice(1)}
+                                {" - "}
+                                {currentPath[0] || "None"}
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-4">
                             <div className="flex items-center gap-2">
                                 <div
                                     className="w-4 h-4 rounded"
@@ -656,11 +691,6 @@ export default function DungeonDisplay() {
                         <div className="text-sm text-gray-300">
                             Use WASD keys to scroll the view
                         </div>
-                        <div className="px-3 py-1 bg-gray-700 rounded text-white text-sm">
-                            Current Room:{" "}
-                            {currentRoomType.charAt(0).toUpperCase() +
-                                currentRoomType.slice(1)}
-                        </div>
                     </div>
                     <canvas
                         ref={canvasRef}
@@ -685,6 +715,14 @@ export default function DungeonDisplay() {
                     </div>
                 </div>
             </div>
+
+            {/* Fixed Regenerate Button */}
+            <button
+                onClick={generateDungeon}
+                className="fixed bottom-6 right-6 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-lg z-50"
+            >
+                Regenerate Dungeon
+            </button>
         </div>
     );
 }
