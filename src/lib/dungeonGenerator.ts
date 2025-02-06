@@ -15,6 +15,7 @@ interface Room {
   y: number; // top-left y coordinate
   cells: { x: number; y: number }[]; // all coordinates this room occupies
   doors: Door[];
+  difficulty: number; // Difficulty level of the room
 }
 
 interface StaticRoomPosition {
@@ -110,6 +111,7 @@ export class DungeonGenerator {
           y: tryY,
           cells: [],
           doors: [],
+          difficulty: 0,
         };
         // Mark cells for the temporary room
         for (let dx = 0; dx < width; dx++) {
@@ -139,6 +141,7 @@ export class DungeonGenerator {
             y: tryY,
             cells: [],
             doors: [],
+            difficulty: 0,
           });
         }
       }
@@ -205,6 +208,7 @@ export class DungeonGenerator {
       doors: [
         { x: 51, y: 50, direction: "north" }, // Door to the north room
       ],
+      difficulty: 0,
     };
 
     const gnellenStartRoom: Room = {
@@ -218,6 +222,7 @@ export class DungeonGenerator {
       doors: [
         { x: 51, y: 49, direction: "south" }, // Door to the start room
       ],
+      difficulty: 0,
     };
 
     this.markRoomOnGrid(startRoom);
@@ -230,6 +235,7 @@ export class DungeonGenerator {
   createShortestPath(pathLength: number, roomSizes: RoomSizes): Room[] {
     const maxPathAttempts = 50;
     let pathAttempt = 0;
+    let currentDifficulty = 0;
 
     while (pathAttempt < maxPathAttempts) {
       try {
@@ -238,6 +244,7 @@ export class DungeonGenerator {
         this.grid = Array.from({ length: this.gridSize }, () =>
           new Array(this.gridSize).fill(false)
         );
+        currentDifficulty = 0;
 
         const startRooms = this.createStartRooms(roomSizes);
         let lastRoom = startRooms[0];
@@ -282,11 +289,7 @@ export class DungeonGenerator {
             // Use different direction options for first room vs others
             const directions =
               i === 0
-                ? [
-                    // { dx: 1, dy: 0, dir: "west" },
-                    // { dx: 0, dy: 1, dir: "north" },
-                    { dx: -1, dy: 0, dir: "east" },
-                  ]
+                ? [{ dx: -1, dy: 0, dir: "east" }]
                 : [
                     { dx: 1, dy: 0, dir: "west" },
                     { dx: -1, dy: 0, dir: "east" },
@@ -329,7 +332,9 @@ export class DungeonGenerator {
               y: lastRoomCell.y + direction.dy,
               cells: [],
               doors: [],
+              difficulty: currentDifficulty,
             };
+
             const validRoom = this.canPlaceRoom(
               template.width,
               template.height,
@@ -339,8 +344,10 @@ export class DungeonGenerator {
               lastRoomCell,
               direction
             );
+
             if (validRoom) {
               validRoom.id = newRoom.id;
+              validRoom.difficulty = currentDifficulty;
               this.markRoomOnGrid(validRoom);
 
               const doorDirection = direction.dir as DoorDirection;
@@ -382,6 +389,7 @@ export class DungeonGenerator {
               placed = true;
 
               if (isStaticRoom) {
+                currentDifficulty++;
                 nextStaticRoomIndex++;
                 currentStep = 0;
               } else {
@@ -413,7 +421,7 @@ export class DungeonGenerator {
     depth: number,
     randomRooms: Array<{ width: number; height: number }>
   ): Room[] {
-    const maxOverallAttempts = 500; // Increased attempts to find all offshoots
+    const maxOverallAttempts = 500;
     let overallAttempts = 0;
 
     while (overallAttempts < maxOverallAttempts) {
@@ -442,6 +450,7 @@ export class DungeonGenerator {
         const startingRoom =
           availableRooms[Math.floor(Math.random() * availableRooms.length)];
         usedStartRooms.add(startingRoom.id);
+        const startingDifficulty = startingRoom.difficulty;
 
         let currentRoom = startingRoom;
         const offshootRooms: Room[] = [startingRoom];
@@ -497,6 +506,7 @@ export class DungeonGenerator {
               y: currentRoomCell.y + direction.dy,
               cells: [],
               doors: [],
+              difficulty: startingDifficulty,
             };
 
             const validRoom = this.canPlaceRoom(
@@ -510,6 +520,7 @@ export class DungeonGenerator {
             );
             if (validRoom) {
               validRoom.id = newRoom.id;
+              validRoom.difficulty = startingDifficulty;
               this.markRoomOnGrid(validRoom);
 
               const doorDirection = direction.dir as DoorDirection;

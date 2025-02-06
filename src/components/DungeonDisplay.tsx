@@ -20,6 +20,7 @@ interface Room {
     y: number;
     cells: { x: number; y: number }[];
     doors: Door[];
+    difficulty: number;
 }
 
 interface RoomWithColor extends Room {
@@ -414,6 +415,7 @@ export default function DungeonDisplay() {
     };
 
     const [currentRoomType, setCurrentRoomType] = useState<string>("start");
+    const [currentRoomDifficulty, setCurrentRoomDifficulty] = useState<number>(0);
     const [showConfig, setShowConfig] = useState(false);
     const [currentPath, setCurrentPath] = useState<string[]>([]);
 
@@ -431,7 +433,7 @@ export default function DungeonDisplay() {
             else if (room.id === "boss-room") type = "boss";
             else if (room.id.startsWith("offshoot")) type = "offshoot";
             setCurrentRoomType(type);
-
+            setCurrentRoomDifficulty(room.difficulty);
             const currentId = room.id;
             setCurrentPath([currentId]);
         }
@@ -504,6 +506,66 @@ export default function DungeonDisplay() {
                     </div>
                 </div>
             </div>
+        );
+    };
+
+    const renderRoom = (room: RoomWithColor) => {
+        const cellSize = 20 * scale;
+        const cells = room.cells.map((cell) => {
+            const x = (cell.x - viewOffset.x) * cellSize;
+            const y = (cell.y - viewOffset.y) * cellSize;
+            return (
+                <rect
+                    key={`${cell.x}-${cell.y}`}
+                    x={x}
+                    y={y}
+                    width={cellSize}
+                    height={cellSize}
+                    fill={room.color}
+                    stroke="#000"
+                    strokeWidth={1}
+                />
+            );
+        });
+
+        // Add difficulty level text to the first cell of each room
+        const firstCell = room.cells[0];
+        const textX = (firstCell.x - viewOffset.x) * cellSize + cellSize / 2;
+        const textY = (firstCell.y - viewOffset.y) * cellSize + cellSize / 2;
+
+        return (
+            <g key={room.id}>
+                {cells}
+                <text
+                    x={textX}
+                    y={textY}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="white"
+                    fontSize={cellSize * 0.4}
+                    fontWeight="bold"
+                >
+                    {room.difficulty}
+                </text>
+                {room.doors.map((door, index) => {
+                    const doorX = (door.x - viewOffset.x) * cellSize;
+                    const doorY = (door.y - viewOffset.y) * cellSize;
+                    const doorSize = cellSize / 3;
+
+                    return (
+                        <rect
+                            key={`${door.x}-${door.y}-${index}`}
+                            x={doorX + cellSize / 2 - doorSize / 2}
+                            y={doorY + cellSize / 2 - doorSize / 2}
+                            width={doorSize}
+                            height={doorSize}
+                            fill="#8B4513"
+                            stroke="#000"
+                            strokeWidth={1}
+                        />
+                    );
+                })}
+            </g>
         );
     };
 
@@ -917,6 +979,11 @@ export default function DungeonDisplay() {
                                     currentRoomType.slice(1)}
                                 {" - "}
                                 {currentPath[0] || "None"}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="text-sm text-white">
+                                Current Room Difficulty: {currentRoomDifficulty}
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-4">
