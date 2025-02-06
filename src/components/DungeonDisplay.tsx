@@ -28,9 +28,6 @@ interface RoomWithColor extends Room {
 
 const CENTER_POINT = 50;
 
-type RoomType = "start" | "gnellen" | "middle" | "boss";
-type RoomSizeKey = `${RoomType}Room`;
-
 interface RoomSizes {
     startRoom: { width: number; height: number };
     gnellenStartRoom: { width: number; height: number };
