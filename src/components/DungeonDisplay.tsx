@@ -53,7 +53,6 @@ export default function DungeonDisplay() {
     const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
     const [roomCount, setRoomCount] = useState(20);
     const [offshoots, setOffshoots] = useState({ count: 2, depth: 3 });
-    const [hasMiddleRoom, setHasMiddleRoom] = useState(false);
     const [roomSizes, setRoomSizes] = useState<RoomSizes>({
         startRoom: { width: 2, height: 2 },
         gnellenStartRoom: { width: 2, height: 2 },
@@ -512,17 +511,6 @@ export default function DungeonDisplay() {
                                             }
                                             className="w-full"
                                         />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={hasMiddleRoom}
-                                            onChange={(e) => setHasMiddleRoom(e.target.checked)}
-                                            className="mr-2"
-                                        />
-                                        <label className="text-sm text-gray-300">
-                                            Has Middle Room
-                                        </label>
                                     </div>
                                 </div>
                             </div>
