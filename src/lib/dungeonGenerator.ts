@@ -19,7 +19,7 @@ interface Room {
 
 interface RoomSizes {
   startRoom: { width: number; height: number };
-  northRoom: { width: number; height: number };
+  gnellenStartRoom: { width: number; height: number };
   middleRoom: { width: number; height: number };
   bossRoom: { width: number; height: number };
   randomRooms: Array<{ width: number; height: number }>;
@@ -197,31 +197,28 @@ export class DungeonGenerator {
       y: 50,
       cells: [],
       doors: [
-        // { x: 50, y: 49, direction: "north" }, // Door to the north room
+        { x: 51, y: 50, direction: "north" }, // Door to the north room
       ],
     };
 
-    const northRoom: Room = {
-      id: "north-start",
+    const gnellenStartRoom: Room = {
+      id: "gnellen-start",
       type: "2x2",
-      width: roomSizes.northRoom.width,
-      height: roomSizes.northRoom.height,
+      width: roomSizes.gnellenStartRoom.width,
+      height: roomSizes.gnellenStartRoom.height,
       x: 50,
       y: 48, // Moved up to accommodate size
       cells: [],
       doors: [
-        { x: 50, y: 50, direction: "south" }, // Door to the start room
+        { x: 51, y: 49, direction: "south" }, // Door to the start room
       ],
     };
 
     this.markRoomOnGrid(startRoom);
-    // this.markRoomOnGrid(northRoom);
-    this.rooms.push(
-      startRoom
-      // northRoom
-    );
+    this.markRoomOnGrid(gnellenStartRoom);
+    this.rooms.push(startRoom, gnellenStartRoom);
 
-    return [startRoom, northRoom];
+    return [startRoom, gnellenStartRoom];
   }
 
   createShortestPath(pathLength: number, roomSizes: RoomSizes): Room[] {
@@ -417,7 +414,7 @@ export class DungeonGenerator {
         const availableRooms = this.rooms.slice(0, originalRoomCount).filter(
           (room) =>
             room.id !== "start" &&
-            room.id !== "north-start" &&
+            room.id !== "gnellen-start" &&
             room.id !== "middle-room" &&
             !room.id.startsWith("offshoot") && // Exclude existing offshoots
             !usedStartRooms.has(room.id) // Exclude rooms already used as offshoot start

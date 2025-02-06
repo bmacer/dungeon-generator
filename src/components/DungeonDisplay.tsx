@@ -33,7 +33,7 @@ type RoomSizeKey = `${RoomType}Room`;
 
 interface RoomSizes {
     startRoom: { width: number; height: number };
-    northRoom: { width: number; height: number };
+    gnellenStartRoom: { width: number; height: number };
     middleRoom: { width: number; height: number };
     bossRoom: { width: number; height: number };
     randomRooms: Array<{ width: number; height: number }>;
@@ -53,7 +53,7 @@ export default function DungeonDisplay() {
     const [hasMiddleRoom, setHasMiddleRoom] = useState(false);
     const [roomSizes, setRoomSizes] = useState<RoomSizes>({
         startRoom: { width: 2, height: 2 },
-        northRoom: { width: 2, height: 2 },
+        gnellenStartRoom: { width: 2, height: 2 },
         middleRoom: { width: 4, height: 4 },
         bossRoom: { width: 3, height: 3 },
         randomRooms: [
@@ -108,7 +108,7 @@ export default function DungeonDisplay() {
                 color:
                     room.id === "start"
                         ? roomTypeColors.start
-                        : room.id === "north-start"
+                        : room.id === "gnellen-start"
                             ? roomTypeColors.north
                             : room.id === "middle-room"
                                 ? roomTypeColors.middle
@@ -416,7 +416,7 @@ export default function DungeonDisplay() {
         if (room) {
             let type = "path";
             if (room.id === "start") type = "start";
-            else if (room.id === "north-start") type = "north";
+            else if (room.id === "gnellen-start") type = "north";
             else if (room.id === "middle-room") type = "middle";
             else if (room.id === "boss-room") type = "boss";
             else if (room.id.startsWith("offshoot")) type = "offshoot";
