@@ -38,6 +38,11 @@ interface RoomTemplate {
   height: number;
 }
 
+interface FirstRoomConfig {
+  doorOffset: { x: number; y: number };
+  doorDirection: "north" | "south" | "east" | "west";
+}
+
 export class DungeonGenerator {
   private rooms: Room[] = [];
   private grid: boolean[][] = [];
@@ -232,8 +237,12 @@ export class DungeonGenerator {
     return [startRoom, gnellenStartRoom];
   }
 
-  createShortestPath(pathLength: number, roomSizes: RoomSizes): Room[] {
-    const maxPathAttempts = 50;
+  createShortestPath(
+    pathLength: number,
+    roomSizes: RoomSizes,
+    firstRoomConfig?: FirstRoomConfig
+  ): Room[] {
+    const maxPathAttempts = 5000;
     let pathAttempt = 0;
     let currentDifficulty = 0;
 
@@ -251,7 +260,13 @@ export class DungeonGenerator {
         let currentStep = 0;
         let nextStaticRoomIndex = 0;
 
+        const firstRoomDoorOffset = firstRoomConfig?.doorOffset || {
+          x: 1,
+          y: 1,
+        };
+
         for (let i = 0; i < pathLength; i++) {
+          const isFirstRoom = i === 0;
           let roomTypes = roomSizes.randomRooms;
           const isBossRoom = i === pathLength - 1;
           const nextStaticRoom =
@@ -278,7 +293,7 @@ export class DungeonGenerator {
 
           let placed = false;
           let attempts = 0;
-          const maxAttempts = 100;
+          const maxAttempts = 1000;
 
           while (!placed && attempts < maxAttempts) {
             const template: RoomTemplate =
@@ -286,19 +301,39 @@ export class DungeonGenerator {
                 ? roomTypes[0]
                 : roomTypes[Math.floor(Math.random() * roomTypes.length)];
 
-            // Use different direction options for first room vs others
-            const directions =
-              i === 0
-                ? [{ dx: -1, dy: 0, dir: "east" }]
-                : [
-                    { dx: 1, dy: 0, dir: "west" },
-                    { dx: -1, dy: 0, dir: "east" },
-                    { dx: 0, dy: -1, dir: "south" },
-                    { dx: 0, dy: 1, dir: "north" },
-                  ];
+            // Use configured direction for first room
+            const directions = isFirstRoom
+              ? [
+                  {
+                    dx:
+                      firstRoomConfig?.doorDirection === "east"
+                        ? 1
+                        : firstRoomConfig?.doorDirection === "west"
+                        ? -1
+                        : 0,
+                    dy:
+                      firstRoomConfig?.doorDirection === "south"
+                        ? 1
+                        : firstRoomConfig?.doorDirection === "north"
+                        ? -1
+                        : 0,
+                    dir: firstRoomConfig?.doorDirection || "east",
+                  },
+                ]
+              : [
+                  { dx: 1, dy: 0, dir: "west" },
+                  { dx: -1, dy: 0, dir: "east" },
+                  { dx: 0, dy: -1, dir: "south" },
+                  { dx: 0, dy: 1, dir: "north" },
+                ];
 
             const validDirections = directions.filter((dir) =>
-              this.isValidDirection(lastRoom.x, lastRoom.y, dir.dx, dir.dy)
+              this.isValidDirection(
+                isFirstRoom ? lastRoom.x + firstRoomDoorOffset.x : lastRoom.x,
+                isFirstRoom ? lastRoom.y + firstRoomDoorOffset.y : lastRoom.y,
+                dir.dx,
+                dir.dy
+              )
             );
 
             if (validDirections.length === 0) {
@@ -312,12 +347,14 @@ export class DungeonGenerator {
               ];
 
             // For first room, always connect from the start room's center
-            const lastRoomCell =
-              i === 0
-                ? { x: lastRoom.x, y: lastRoom.y }
-                : lastRoom.cells[
-                    Math.floor(Math.random() * lastRoom.cells.length)
-                  ];
+            const doorPosition = isFirstRoom
+              ? {
+                  x: lastRoom.x + firstRoomDoorOffset.x,
+                  y: lastRoom.y + firstRoomDoorOffset.y,
+                }
+              : lastRoom.cells[
+                  Math.floor(Math.random() * lastRoom.cells.length)
+                ];
 
             const newRoom: Room = {
               id: isStaticRoom
@@ -328,8 +365,8 @@ export class DungeonGenerator {
               type: "2x2",
               width: template.width,
               height: template.height,
-              x: lastRoomCell.x + direction.dx,
-              y: lastRoomCell.y + direction.dy,
+              x: doorPosition.x + direction.dx,
+              y: doorPosition.y + direction.dy,
               cells: [],
               doors: [],
               difficulty: currentDifficulty,
@@ -341,7 +378,7 @@ export class DungeonGenerator {
               newRoom.x,
               newRoom.y,
               lastRoom,
-              lastRoomCell,
+              doorPosition,
               direction
             );
 
@@ -362,20 +399,20 @@ export class DungeonGenerator {
               if (
                 this.isValidDoorPosition(
                   lastRoom,
-                  lastRoomCell.x,
-                  lastRoomCell.y
+                  doorPosition.x,
+                  doorPosition.y
                 )
               ) {
                 lastRoom.doors.push({
-                  x: lastRoomCell.x,
-                  y: lastRoomCell.y,
+                  x: doorPosition.x,
+                  y: doorPosition.y,
                   direction: doorDirection,
                 });
               }
 
               // Add matching door to the new room
-              const newDoorX = lastRoomCell.x + direction.dx;
-              const newDoorY = lastRoomCell.y + direction.dy;
+              const newDoorX = doorPosition.x + direction.dx;
+              const newDoorY = doorPosition.y + direction.dy;
               if (this.isValidDoorPosition(validRoom, newDoorX, newDoorY)) {
                 validRoom.doors.push({
                   x: newDoorX,
@@ -467,10 +504,10 @@ export class DungeonGenerator {
 
           while (!placed && attempts < maxAttempts) {
             const directions = [
-              { dx: 1, dy: 0, dir: "west" },
-              { dx: -1, dy: 0, dir: "east" },
-              { dx: 0, dy: -1, dir: "south" },
-              { dx: 0, dy: 1, dir: "north" },
+              { dx: 1, dy: 0, dir: "east" },
+              { dx: -1, dy: 0, dir: "west" },
+              { dx: 0, dy: -1, dir: "north" },
+              { dx: 0, dy: 1, dir: "south" },
             ];
 
             const validDirections = directions.filter((dir) =>

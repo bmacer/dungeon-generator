@@ -69,6 +69,13 @@ export default function DungeonDisplay() {
             { width: 3, height: 3 },
         ],
     });
+    const [firstRoomDoorOffset, setFirstRoomDoorOffset] = useState({
+        x: 1,
+        y: 1,
+    });
+    const [firstRoomDirection, setFirstRoomDirection] = useState<
+        "north" | "south" | "east" | "west"
+    >("east");
 
     const roomTypeColors = useMemo(
         () => ({
@@ -96,18 +103,90 @@ export default function DungeonDisplay() {
         return `rgb(${r},${g},${b})`;
     };
 
+    // Calculate available door positions based on room dimensions
+    const availableDoorPositions = useMemo(() => {
+        const positions = [];
+        for (let x = 0; x < roomSizes.startRoom.width; x++) {
+            for (let y = 0; y < roomSizes.startRoom.height; y++) {
+                positions.push({ x, y });
+            }
+        }
+        return positions;
+    }, [roomSizes.startRoom.width, roomSizes.startRoom.height]);
+
+    // Helper to determine available directions for a door position
+    const getAvailableDirections = (
+        x: number,
+        y: number,
+        width: number,
+        height: number
+    ) => {
+        const directions: ("north" | "south" | "east" | "west")[] = [];
+        const startX = 50; // Starting room's X position
+        const startY = 50; // Starting room's Y position
+        const gnellenWidth = roomSizes.gnellenStartRoom.width;
+
+        // Convert room-relative coordinates to grid coordinates
+        const gridX = startX + x;
+        const gridY = startY + y;
+
+        // Check if position is on edge and not blocked by Gnellen room
+        if (y === 0) {
+            // Only block north if this x-coordinate overlaps with Gnellen room
+            const isBlockedByGnellen = x < gnellenWidth;
+            if (!isBlockedByGnellen) {
+                directions.push("north");
+            }
+        }
+        if (y === height - 1) directions.push("south");
+        if (x === 0) directions.push("west");
+        if (x === width - 1) directions.push("east");
+
+        return directions;
+    };
+
+    // Calculate valid door positions and their available directions
+    const doorPositionOptions = useMemo(() => {
+        const options: Array<{
+            x: number;
+            y: number;
+            directions: ("north" | "south" | "east" | "west")[];
+        }> = [];
+
+        const { width, height } = roomSizes.startRoom;
+
+        // Check each position
+        for (let x = 0; x < width; x++) {
+            for (let y = 0; y < height; y++) {
+                const availableDirections = getAvailableDirections(x, y, width, height);
+                if (availableDirections.length > 0) {
+                    options.push({ x, y, directions: availableDirections });
+                }
+            }
+        }
+
+        return options;
+    }, [roomSizes.startRoom.width, roomSizes.startRoom.height]);
+
     const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator();
-        generator.createShortestPath(roomCount, {
-            ...roomSizes,
-            staticRoomPositions: roomSizes.staticRooms.map((room, index) => ({
-                width: room.width,
-                height: room.height,
-                stepsFromPrevious: room.stepsFromPrevious,
-                index,
-            })),
-            randomRooms: roomSizes.randomRooms,
-        });
+        generator.createShortestPath(
+            roomCount,
+            {
+                ...roomSizes,
+                staticRoomPositions: roomSizes.staticRooms.map((room, index) => ({
+                    width: room.width,
+                    height: room.height,
+                    stepsFromPrevious: room.stepsFromPrevious,
+                    index,
+                })),
+                randomRooms: roomSizes.randomRooms,
+            },
+            {
+                doorOffset: firstRoomDoorOffset,
+                doorDirection: firstRoomDirection,
+            }
+        );
         const roomsWithOffshoots = generator.createOffshoots(
             offshoots.count,
             offshoots.depth,
@@ -132,7 +211,14 @@ export default function DungeonDisplay() {
         );
         setPlayerPos({ x: CENTER_POINT, y: CENTER_POINT });
         setViewOffset({ x: 0, y: 0 });
-    }, [roomCount, roomSizes, roomTypeColors, offshoots]);
+    }, [
+        roomCount,
+        roomSizes,
+        roomTypeColors,
+        offshoots,
+        firstRoomDoorOffset,
+        firstRoomDirection,
+    ]);
 
     useEffect(() => {
         generateDungeon();
@@ -509,6 +595,25 @@ export default function DungeonDisplay() {
         );
     };
 
+    // Update door position handler to reset direction
+    const handleDoorPositionChange = (
+        e: React.ChangeEvent<HTMLSelectElement>
+    ) => {
+        const [x, y] = e.target.value.split(",").map(Number);
+        const newPosition = { x, y };
+        setFirstRoomDoorOffset(newPosition);
+
+        // Find available directions for new position
+        const positionOptions = doorPositionOptions.find(
+            (pos) => pos.x === x && pos.y === y
+        );
+
+        // Set first available direction
+        if (positionOptions?.directions.length) {
+            setFirstRoomDirection(positionOptions.directions[0]);
+        }
+    };
+
     const renderRoom = (room: RoomWithColor) => {
         const cellSize = 20 * scale;
         const cells = room.cells.map((cell) => {
@@ -602,7 +707,7 @@ export default function DungeonDisplay() {
                                         <input
                                             type="range"
                                             min="5"
-                                            max="30"
+                                            max="80"
                                             value={roomCount}
                                             onChange={(e) => setRoomCount(parseInt(e.target.value))}
                                             className="w-full"
@@ -963,6 +1068,56 @@ export default function DungeonDisplay() {
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+
+                            {/* Starting Room Door */}
+                            <div className="bg-gray-700 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-white mb-4">
+                                    Starting Room Door
+                                </h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-sm text-gray-300 block mb-2">
+                                            Position
+                                        </label>
+                                        <select
+                                            value={`${firstRoomDoorOffset.x},${firstRoomDoorOffset.y}`}
+                                            onChange={handleDoorPositionChange}
+                                            className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                        >
+                                            {doorPositionOptions.map(({ x, y }) => (
+                                                <option key={`${x},${y}`} value={`${x},${y}`}>
+                                                    Position ({x}, {y})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm text-gray-300 block mb-2">
+                                            Direction
+                                        </label>
+                                        <select
+                                            value={firstRoomDirection}
+                                            onChange={(e) =>
+                                                setFirstRoomDirection(e.target.value as any)
+                                            }
+                                            className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
+                                        >
+                                            {doorPositionOptions
+                                                .find(
+                                                    (pos) =>
+                                                        pos.x === firstRoomDoorOffset.x &&
+                                                        pos.y === firstRoomDoorOffset.y
+                                                )
+                                                ?.directions.map((dir) => (
+                                                    <option key={dir} value={dir}>
+                                                        {dir.charAt(0).toUpperCase() + dir.slice(1)}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                         </div>
