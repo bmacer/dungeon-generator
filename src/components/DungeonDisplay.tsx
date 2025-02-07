@@ -103,17 +103,6 @@ export default function DungeonDisplay() {
         return `rgb(${r},${g},${b})`;
     };
 
-    // Calculate available door positions based on room dimensions
-    const availableDoorPositions = useMemo(() => {
-        const positions = [];
-        for (let x = 0; x < roomSizes.startRoom.width; x++) {
-            for (let y = 0; y < roomSizes.startRoom.height; y++) {
-                positions.push({ x, y });
-            }
-        }
-        return positions;
-    }, [roomSizes.startRoom.width, roomSizes.startRoom.height]);
-
     // Helper to determine available directions for a door position
     const getAvailableDirections = (
         x: number,
@@ -122,13 +111,7 @@ export default function DungeonDisplay() {
         height: number
     ) => {
         const directions: ("north" | "south" | "east" | "west")[] = [];
-        const startX = 50; // Starting room's X position
-        const startY = 50; // Starting room's Y position
         const gnellenWidth = roomSizes.gnellenStartRoom.width;
-
-        // Convert room-relative coordinates to grid coordinates
-        const gridX = startX + x;
-        const gridY = startY + y;
 
         // Check if position is on edge and not blocked by Gnellen room
         if (y === 0) {
@@ -614,66 +597,6 @@ export default function DungeonDisplay() {
         }
     };
 
-    const renderRoom = (room: RoomWithColor) => {
-        const cellSize = 20 * scale;
-        const cells = room.cells.map((cell) => {
-            const x = (cell.x - viewOffset.x) * cellSize;
-            const y = (cell.y - viewOffset.y) * cellSize;
-            return (
-                <rect
-                    key={`${cell.x}-${cell.y}`}
-                    x={x}
-                    y={y}
-                    width={cellSize}
-                    height={cellSize}
-                    fill={room.color}
-                    stroke="#000"
-                    strokeWidth={1}
-                />
-            );
-        });
-
-        // Add difficulty level text to the first cell of each room
-        const firstCell = room.cells[0];
-        const textX = (firstCell.x - viewOffset.x) * cellSize + cellSize / 2;
-        const textY = (firstCell.y - viewOffset.y) * cellSize + cellSize / 2;
-
-        return (
-            <g key={room.id}>
-                {cells}
-                <text
-                    x={textX}
-                    y={textY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="white"
-                    fontSize={cellSize * 0.4}
-                    fontWeight="bold"
-                >
-                    {room.difficulty}
-                </text>
-                {room.doors.map((door, index) => {
-                    const doorX = (door.x - viewOffset.x) * cellSize;
-                    const doorY = (door.y - viewOffset.y) * cellSize;
-                    const doorSize = cellSize / 3;
-
-                    return (
-                        <rect
-                            key={`${door.x}-${door.y}-${index}`}
-                            x={doorX + cellSize / 2 - doorSize / 2}
-                            y={doorY + cellSize / 2 - doorSize / 2}
-                            width={doorSize}
-                            height={doorSize}
-                            fill="#8B4513"
-                            stroke="#000"
-                            strokeWidth={1}
-                        />
-                    );
-                })}
-            </g>
-        );
-    };
-
     return (
         <div className="flex flex-col items-center gap-4 p-6 bg-gray-900 min-h-screen relative">
             {/* Config Panel */}
@@ -1101,7 +1024,9 @@ export default function DungeonDisplay() {
                                         <select
                                             value={firstRoomDirection}
                                             onChange={(e) =>
-                                                setFirstRoomDirection(e.target.value as any)
+                                                setFirstRoomDirection(
+                                                    e.target.value as "north" | "south" | "east" | "west"
+                                                )
                                             }
                                             className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
                                         >
