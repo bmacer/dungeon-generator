@@ -42,8 +42,8 @@ interface DoorCell {
 }
 
 interface RoomSizes {
-    startRoom: { width: number; height: number };
-    gnellenStartRoom: { width: number; height: number };
+    startRoom: { width: number; height: number; doorCells?: DoorCell[] };
+    gnellenStartRoom: { width: number; height: number; doorCells?: DoorCell[] };
     staticRooms: StaticRoom[];
     bossRoom: { width: number; height: number; doorCells?: DoorCell[] };
     randomRooms: Array<{ width: number; height: number; doorCells?: DoorCell[] }>;
@@ -654,8 +654,8 @@ export default function DungeonDisplay() {
                             key={`${x}-${y}`}
                             onClick={() => handleCellClick(x, y)}
                             className={`w-6 h-6 border ${doorCells.some((cell) => cell.x === x && cell.y === y)
-                                ? "bg-brown-500 border-brown-600"
-                                : "bg-gray-500 border-gray-600"
+                                    ? "bg-brown-500 border-brown-600"
+                                    : "bg-gray-500 border-gray-600"
                                 } hover:bg-gray-400 transition-colors`}
                         />
                     ))
@@ -788,6 +788,17 @@ export default function DungeonDisplay() {
                                                 className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
                                             />
                                         </div>
+                                        <RoomTemplateGrid
+                                            width={roomSizes.startRoom.width}
+                                            height={roomSizes.startRoom.height}
+                                            doorCells={roomSizes.startRoom.doorCells || []}
+                                            onChange={(doorCells) =>
+                                                setRoomSizes((prev) => ({
+                                                    ...prev,
+                                                    startRoom: { ...prev.startRoom, doorCells },
+                                                }))
+                                            }
+                                        />
                                     </div>
 
                                     <div className="space-y-2">
@@ -829,6 +840,20 @@ export default function DungeonDisplay() {
                                                 className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
                                             />
                                         </div>
+                                        <RoomTemplateGrid
+                                            width={roomSizes.gnellenStartRoom.width}
+                                            height={roomSizes.gnellenStartRoom.height}
+                                            doorCells={roomSizes.gnellenStartRoom.doorCells || []}
+                                            onChange={(doorCells) =>
+                                                setRoomSizes((prev) => ({
+                                                    ...prev,
+                                                    gnellenStartRoom: {
+                                                        ...prev.gnellenStartRoom,
+                                                        doorCells,
+                                                    },
+                                                }))
+                                            }
+                                        />
                                     </div>
 
                                     {/* Static Rooms */}
@@ -843,7 +868,12 @@ export default function DungeonDisplay() {
                                                         ...prev,
                                                         staticRooms: [
                                                             ...prev.staticRooms,
-                                                            { width: 3, height: 3, stepsFromPrevious: 5, doorCells: [] },
+                                                            {
+                                                                width: 3,
+                                                                height: 3,
+                                                                stepsFromPrevious: 5,
+                                                                doorCells: [],
+                                                            },
                                                         ],
                                                     }))
                                                 }
@@ -870,7 +900,10 @@ export default function DungeonDisplay() {
                                                                         ...prev,
                                                                         staticRooms: prev.staticRooms.map((r, i) =>
                                                                             i === index
-                                                                                ? { ...r, width: Number(e.target.value) }
+                                                                                ? {
+                                                                                    ...r,
+                                                                                    width: Number(e.target.value),
+                                                                                }
                                                                                 : r
                                                                         ),
                                                                     }))
@@ -888,7 +921,10 @@ export default function DungeonDisplay() {
                                                                         ...prev,
                                                                         staticRooms: prev.staticRooms.map((r, i) =>
                                                                             i === index
-                                                                                ? { ...r, height: Number(e.target.value) }
+                                                                                ? {
+                                                                                    ...r,
+                                                                                    height: Number(e.target.value),
+                                                                                }
                                                                                 : r
                                                                         ),
                                                                     }))
