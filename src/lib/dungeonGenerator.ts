@@ -25,12 +25,23 @@ interface StaticRoomPosition {
   index: number;
 }
 
+interface RandomRoom {
+  width: number;
+  height: number;
+  doorCells: { x: number; y: number }[];
+}
+
+interface DoorCell {
+  x: number;
+  y: number;
+}
+
 interface RoomSizes {
   startRoom: { width: number; height: number };
   gnellenStartRoom: { width: number; height: number };
   staticRoomPositions: StaticRoomPosition[];
   bossRoom: { width: number; height: number };
-  randomRooms: Array<{ width: number; height: number }>;
+  randomRooms: Array<{ width: number; height: number; doorCells?: DoorCell[] }>;
 }
 
 interface RoomTemplate {

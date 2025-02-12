@@ -35,12 +35,17 @@ interface StaticRoom {
     stepsFromPrevious: number; // steps from start or previous static room
 }
 
+interface DoorCell {
+    x: number;
+    y: number;
+}
+
 interface RoomSizes {
     startRoom: { width: number; height: number };
     gnellenStartRoom: { width: number; height: number };
     staticRooms: StaticRoom[];
     bossRoom: { width: number; height: number };
-    randomRooms: Array<{ width: number; height: number }>;
+    randomRooms: Array<{ width: number; height: number; doorCells?: DoorCell[] }>;
 }
 
 export default function DungeonDisplay() {
@@ -76,6 +81,11 @@ export default function DungeonDisplay() {
     const [firstRoomDirection, setFirstRoomDirection] = useState<
         "north" | "south" | "east" | "west"
     >("east");
+
+    useEffect(() => {
+        console.log("roomSizes");
+        console.log(roomSizes);
+    }, [roomSizes]);
 
     const roomTypeColors = useMemo(
         () => ({
@@ -472,7 +482,10 @@ export default function DungeonDisplay() {
     const addRandomRoom = () => {
         setRoomSizes((prev) => ({
             ...prev,
-            randomRooms: [...prev.randomRooms, { width: 2, height: 2 }],
+            randomRooms: [
+                ...prev.randomRooms,
+                { width: 2, height: 2, doorCells: [] },
+            ],
         }));
     };
 
@@ -595,6 +608,59 @@ export default function DungeonDisplay() {
         if (positionOptions?.directions.length) {
             setFirstRoomDirection(positionOptions.directions[0]);
         }
+    };
+
+    // Add this component after the JsonModal component
+    const RoomTemplateGrid = ({
+        width,
+        height,
+        doorCells = [],
+        onChange,
+    }: {
+        width: number;
+        height: number;
+        doorCells?: DoorCell[];
+        onChange: (doorCells: DoorCell[]) => void;
+    }) => {
+        const handleCellClick = (x: number, y: number) => {
+            const existingDoorIndex = doorCells.findIndex(
+                (cell) => cell.x === x && cell.y === y
+            );
+
+            if (existingDoorIndex !== -1) {
+                // Remove door if it exists
+                onChange([
+                    ...doorCells.slice(0, existingDoorIndex),
+                    ...doorCells.slice(existingDoorIndex + 1),
+                ]);
+            } else {
+                // Add new door
+                onChange([...doorCells, { x, y }]);
+            }
+        };
+
+        return (
+            <div
+                className="grid gap-1 mt-2"
+                style={{
+                    gridTemplateColumns: `repeat(${width}, 1fr)`,
+                    width: `${width * 24}px`,
+                }}
+            >
+                {Array.from({ length: height }).map((_, y) =>
+                    Array.from({ length: width }).map((_, x) => (
+                        <button
+                            key={`${x}-${y}`}
+                            onClick={() => handleCellClick(x, y)}
+                            className={`w-6 h-6 border ${doorCells.some((cell) => cell.x === x && cell.y === y)
+                                    ? "bg-brown-500 border-brown-600"
+                                    : "bg-gray-500 border-gray-600"
+                                } hover:bg-gray-400 transition-colors`}
+                        />
+                    ))
+                )}
+            </div>
+        );
     };
 
     return (
@@ -989,6 +1055,19 @@ export default function DungeonDisplay() {
                                                     className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
                                                 />
                                             </div>
+                                            <RoomTemplateGrid
+                                                width={room.width}
+                                                height={room.height}
+                                                doorCells={room.doorCells || []}
+                                                onChange={(doorCells) =>
+                                                    setRoomSizes((prev) => ({
+                                                        ...prev,
+                                                        randomRooms: prev.randomRooms.map((r, i) =>
+                                                            i === index ? { ...r, doorCells } : r
+                                                        ),
+                                                    }))
+                                                }
+                                            />
                                         </div>
                                     ))}
                                 </div>
