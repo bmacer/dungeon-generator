@@ -32,7 +32,8 @@ const CENTER_POINT = 50;
 interface StaticRoom {
     width: number;
     height: number;
-    stepsFromPrevious: number; // steps from start or previous static room
+    stepsFromPrevious: number;
+    doorCells?: DoorCell[];
 }
 
 interface DoorCell {
@@ -44,7 +45,7 @@ interface RoomSizes {
     startRoom: { width: number; height: number };
     gnellenStartRoom: { width: number; height: number };
     staticRooms: StaticRoom[];
-    bossRoom: { width: number; height: number };
+    bossRoom: { width: number; height: number; doorCells?: DoorCell[] };
     randomRooms: Array<{ width: number; height: number; doorCells?: DoorCell[] }>;
 }
 
@@ -63,15 +64,15 @@ export default function DungeonDisplay() {
         startRoom: { width: 2, height: 2 },
         gnellenStartRoom: { width: 2, height: 2 },
         staticRooms: [
-            { width: 3, height: 3, stepsFromPrevious: 5 }, // First static room, 5 steps from start
-            { width: 3, height: 3, stepsFromPrevious: 7 }, // Second static room, 7 steps from first static room
+            { width: 3, height: 3, stepsFromPrevious: 5, doorCells: [] },
+            { width: 3, height: 3, stepsFromPrevious: 7, doorCells: [] },
         ],
-        bossRoom: { width: 3, height: 3 },
+        bossRoom: { width: 3, height: 3, doorCells: [] },
         randomRooms: [
-            { width: 2, height: 2 },
-            { width: 1, height: 3 },
-            { width: 3, height: 1 },
-            { width: 3, height: 3 },
+            { width: 2, height: 2, doorCells: [] },
+            { width: 1, height: 3, doorCells: [] },
+            { width: 3, height: 1, doorCells: [] },
+            { width: 3, height: 3, doorCells: [] },
         ],
     });
     const [firstRoomDoorOffset, setFirstRoomDoorOffset] = useState({
@@ -653,8 +654,8 @@ export default function DungeonDisplay() {
                             key={`${x}-${y}`}
                             onClick={() => handleCellClick(x, y)}
                             className={`w-6 h-6 border ${doorCells.some((cell) => cell.x === x && cell.y === y)
-                                    ? "bg-brown-500 border-brown-600"
-                                    : "bg-gray-500 border-gray-600"
+                                ? "bg-brown-500 border-brown-600"
+                                : "bg-gray-500 border-gray-600"
                                 } hover:bg-gray-400 transition-colors`}
                         />
                     ))
@@ -842,7 +843,7 @@ export default function DungeonDisplay() {
                                                         ...prev,
                                                         staticRooms: [
                                                             ...prev.staticRooms,
-                                                            { width: 3, height: 3, stepsFromPrevious: 5 },
+                                                            { width: 3, height: 3, stepsFromPrevious: 5, doorCells: [] },
                                                         ],
                                                     }))
                                                 }
@@ -857,47 +858,56 @@ export default function DungeonDisplay() {
                                                     key={index}
                                                     className="flex items-center gap-4 bg-gray-600 p-2 rounded"
                                                 >
-                                                    <div className="flex gap-2 items-center">
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            max="6"
-                                                            value={room.width}
-                                                            onChange={(e) =>
+                                                    <div className="flex-1 space-y-2">
+                                                        <div className="flex gap-2 items-center">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                max="6"
+                                                                value={room.width}
+                                                                onChange={(e) =>
+                                                                    setRoomSizes((prev) => ({
+                                                                        ...prev,
+                                                                        staticRooms: prev.staticRooms.map((r, i) =>
+                                                                            i === index
+                                                                                ? { ...r, width: Number(e.target.value) }
+                                                                                : r
+                                                                        ),
+                                                                    }))
+                                                                }
+                                                                className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
+                                                            />
+                                                            <span className="text-gray-300">×</span>
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                max="6"
+                                                                value={room.height}
+                                                                onChange={(e) =>
+                                                                    setRoomSizes((prev) => ({
+                                                                        ...prev,
+                                                                        staticRooms: prev.staticRooms.map((r, i) =>
+                                                                            i === index
+                                                                                ? { ...r, height: Number(e.target.value) }
+                                                                                : r
+                                                                        ),
+                                                                    }))
+                                                                }
+                                                                className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
+                                                            />
+                                                        </div>
+                                                        <RoomTemplateGrid
+                                                            width={room.width}
+                                                            height={room.height}
+                                                            doorCells={room.doorCells || []}
+                                                            onChange={(doorCells) =>
                                                                 setRoomSizes((prev) => ({
                                                                     ...prev,
                                                                     staticRooms: prev.staticRooms.map((r, i) =>
-                                                                        i === index
-                                                                            ? {
-                                                                                ...r,
-                                                                                width: Number(e.target.value),
-                                                                            }
-                                                                            : r
+                                                                        i === index ? { ...r, doorCells } : r
                                                                     ),
                                                                 }))
                                                             }
-                                                            className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
-                                                        />
-                                                        <span className="text-gray-300">×</span>
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            max="6"
-                                                            value={room.height}
-                                                            onChange={(e) =>
-                                                                setRoomSizes((prev) => ({
-                                                                    ...prev,
-                                                                    staticRooms: prev.staticRooms.map((r, i) =>
-                                                                        i === index
-                                                                            ? {
-                                                                                ...r,
-                                                                                height: Number(e.target.value),
-                                                                            }
-                                                                            : r
-                                                                    ),
-                                                                }))
-                                                            }
-                                                            className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
                                                         />
                                                     </div>
                                                     <div className="flex-1">
@@ -986,6 +996,17 @@ export default function DungeonDisplay() {
                                                 className="w-16 px-2 py-1 bg-gray-600 border border-gray-500 rounded text-white"
                                             />
                                         </div>
+                                        <RoomTemplateGrid
+                                            width={roomSizes.bossRoom.width}
+                                            height={roomSizes.bossRoom.height}
+                                            doorCells={roomSizes.bossRoom.doorCells || []}
+                                            onChange={(doorCells) =>
+                                                setRoomSizes((prev) => ({
+                                                    ...prev,
+                                                    bossRoom: { ...prev.bossRoom, doorCells },
+                                                }))
+                                            }
+                                        />
                                     </div>
                                 </div>
                             </div>
