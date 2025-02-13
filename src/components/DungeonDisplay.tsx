@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
     DungeonGenerator,
     Room,
@@ -8,6 +8,7 @@ import {
     RoomConfig,
     Door,
 } from "../lib/dungeonGenerator";
+import dynamic from "next/dynamic";
 
 const CELL_SIZE = 30;
 const GRID_SIZE = 100;
@@ -52,7 +53,10 @@ const defaultRoomConfigs: RoomConfig[] = [
     },
 ];
 
-export default function DungeonDisplay() {
+// Add type for room config update value
+type RoomConfigUpdateValue = string | number | Door;
+
+function DungeonDisplay() {
     const [dungeon, setDungeon] = useState<Room[]>([]);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +77,16 @@ export default function DungeonDisplay() {
 
     const [fastestPathSteps, setFastestPathSteps] = useState<number | null>(null);
 
+    // Replace the static width calculation with state
+    const [containerWidth, setContainerWidth] = useState(800);
+    const [containerHeight, setContainerHeight] = useState(800);
+
+    // Add useEffect to handle window-dependent calculations
+    useEffect(() => {
+        setContainerWidth(Math.min(800, window.innerWidth - 32));
+        setContainerHeight(Math.min(800, window.innerHeight - 200));
+    }, []);
+
     const addRoomConfig = () => {
         setRoomConfigs([
             ...roomConfigs,
@@ -87,7 +101,7 @@ export default function DungeonDisplay() {
     const updateRoomConfig = (
         index: number,
         field: keyof RoomConfig,
-        value: any
+        value: RoomConfigUpdateValue
     ) => {
         const newConfigs = [...roomConfigs];
         if (field === "doors") {
@@ -110,7 +124,7 @@ export default function DungeonDisplay() {
         setRoomConfigs(roomConfigs.filter((_, i) => i !== index));
     };
 
-    const generateDungeon = () => {
+    const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator({
             totalRooms,
             offshoots,
@@ -118,12 +132,13 @@ export default function DungeonDisplay() {
             roomConfigs,
             shortcuts,
         });
-        let { rooms, fastestPathSteps } = generator.generate();
-        setDungeon(rooms);
-        setFastestPathSteps(fastestPathSteps);
-    };
+        const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
+            generator.generate();
+        setDungeon(generatedRooms);
+        setFastestPathSteps(newFastestPathSteps);
+    }, [totalRooms, offshoots, staticRooms, roomConfigs, shortcuts]);
 
-    const centerView = () => {
+    const centerView = useCallback(() => {
         if (containerRef.current) {
             const centerX = (GRID_SIZE * CELL_SIZE) / 2;
             const centerY = (GRID_SIZE * CELL_SIZE) / 2;
@@ -136,7 +151,7 @@ export default function DungeonDisplay() {
                 behavior: "smooth",
             });
         }
-    };
+    }, []);
 
     const addOffshoot = () => {
         setOffshoots([...offshoots, { count: 1, depth: 1 }]);
@@ -163,15 +178,21 @@ export default function DungeonDisplay() {
     const updateStaticRoom = (
         index: number,
         field: keyof (typeof staticRooms)[0],
-        value: any
+        value: string | number
     ) => {
         const newStaticRooms = [...staticRooms];
         if (field === "type") {
             if (roomConfigs.some((config) => config.id === value)) {
-                newStaticRooms[index] = { ...newStaticRooms[index], [field]: value };
+                newStaticRooms[index] = {
+                    ...newStaticRooms[index],
+                    [field]: value as string,
+                };
             }
         } else {
-            newStaticRooms[index] = { ...newStaticRooms[index], [field]: value };
+            newStaticRooms[index] = {
+                ...newStaticRooms[index],
+                [field]: value as number,
+            };
         }
         setStaticRooms(newStaticRooms);
     };
@@ -263,9 +284,12 @@ export default function DungeonDisplay() {
     };
 
     useEffect(() => {
-        generateDungeon();
-        centerView();
-    }, []);
+        const initDungeon = () => {
+            generateDungeon();
+            centerView();
+        };
+        initDungeon();
+    }, [generateDungeon, centerView]); // Empty dependency array since this should only run once on mount
 
     return (
         <div className="p-4 text-black">
@@ -492,8 +516,8 @@ export default function DungeonDisplay() {
                 ref={containerRef}
                 className="border border-gray-300 overflow-auto relative"
                 style={{
-                    width: Math.min(800, window.innerWidth - 32),
-                    height: Math.min(800, window.innerHeight - 200),
+                    width: containerWidth,
+                    height: containerHeight,
                     marginLeft: COORD_SIZE,
                     marginTop: COORD_SIZE,
                 }}
@@ -591,3 +615,8 @@ export default function DungeonDisplay() {
         </div>
     );
 }
+
+// Only export the dynamic version
+export default dynamic(() => Promise.resolve(DungeonDisplay), {
+    ssr: false,
+});
