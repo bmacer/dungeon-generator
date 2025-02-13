@@ -13,7 +13,6 @@ interface Door {
 
 interface Room {
     id: string;
-    type: "1x3" | "2x2" | "1x1";
     width: number;
     height: number;
     x: number;
@@ -42,11 +41,31 @@ interface DoorCell {
 }
 
 interface RoomSizes {
-    startRoom: { width: number; height: number; doorCells?: DoorCell[] };
-    gnellenStartRoom: { width: number; height: number; doorCells?: DoorCell[] };
+    startRoom: {
+        width: number;
+        height: number;
+        doorCells: DoorCell[];
+        templateId: string;
+    };
+    gnellenStartRoom: {
+        width: number;
+        height: number;
+        doorCells: DoorCell[];
+        templateId: string;
+    };
     staticRooms: StaticRoom[];
-    bossRoom: { width: number; height: number; doorCells?: DoorCell[] };
-    randomRooms: Array<{ width: number; height: number; doorCells?: DoorCell[] }>;
+    bossRoom: {
+        width: number;
+        height: number;
+        doorCells: DoorCell[];
+        templateId: string;
+    };
+    randomRooms: Array<{
+        width: number;
+        height: number;
+        doorCells: DoorCell[];
+        templateId: string;
+    }>;
 }
 
 export default function DungeonDisplay() {
@@ -58,21 +77,62 @@ export default function DungeonDisplay() {
     const [rooms, setRooms] = useState<RoomWithColor[]>([]);
     const [scale, setScale] = useState(13);
     const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
-    const [roomCount, setRoomCount] = useState(20);
-    const [offshoots, setOffshoots] = useState({ count: 2, depth: 3 });
+    const [roomCount, setRoomCount] = useState(1);
+    const [offshoots, setOffshoots] = useState({ count: 1, depth: 1 });
     const [roomSizes, setRoomSizes] = useState<RoomSizes>({
-        startRoom: { width: 2, height: 2 },
-        gnellenStartRoom: { width: 2, height: 2 },
+        startRoom: {
+            width: 2,
+            height: 2,
+            doorCells: [
+                { x: 1, y: 0 },
+                { x: 1, y: 1 },
+            ],
+            templateId: "start-room",
+        },
+        gnellenStartRoom: {
+            width: 2,
+            height: 2,
+            doorCells: [{ x: 1, y: 1 }],
+            templateId: "gnellen-room",
+        },
         staticRooms: [
-            { width: 3, height: 3, stepsFromPrevious: 5, doorCells: [] },
-            { width: 3, height: 3, stepsFromPrevious: 7, doorCells: [] },
+            {
+                width: 2,
+                height: 2,
+                stepsFromPrevious: 2,
+                doorCells: [
+                    { x: 0, y: 0 },
+                    { x: 1, y: 1 },
+                ],
+            },
+            {
+                width: 3,
+                height: 3,
+                stepsFromPrevious: 5,
+                doorCells: [
+                    { x: 0, y: 0 },
+                    { x: 2, y: 2 },
+                ],
+            },
         ],
-        bossRoom: { width: 3, height: 3, doorCells: [] },
+        bossRoom: {
+            width: 3,
+            height: 3,
+            doorCells: [{ x: 0, y: 0 }],
+            templateId: "boss-room",
+        },
         randomRooms: [
-            { width: 2, height: 2, doorCells: [] },
-            { width: 1, height: 3, doorCells: [] },
-            { width: 3, height: 1, doorCells: [] },
-            { width: 3, height: 3, doorCells: [] },
+            {
+                width: 4,
+                height: 2,
+                doorCells: [
+                    { x: 0, y: 0 },
+                    { x: 0, y: 1 },
+                    { x: 3, y: 0 },
+                    { x: 3, y: 1 },
+                ],
+                templateId: Math.random().toString(36).substr(2, 9),
+            },
         ],
     });
     const [firstRoomDoorOffset, setFirstRoomDoorOffset] = useState({
@@ -173,12 +233,14 @@ export default function DungeonDisplay() {
                     height: room.height,
                     stepsFromPrevious: room.stepsFromPrevious,
                     index,
+                    doorCells: room.doorCells || [],
+                    templateId: `static-room-${index}`,
                 })),
-                randomRooms: roomSizes.randomRooms,
+                randomRoomTemplates: roomSizes.randomRooms,
             },
             {
                 doorOffset: firstRoomDoorOffset,
-                doorDirection: firstRoomDirection,
+                direction: firstRoomDirection,
             }
         );
         const roomsWithOffshoots = generator.createOffshoots(
@@ -194,7 +256,7 @@ export default function DungeonDisplay() {
                         ? roomTypeColors.start
                         : room.id === "gnellen-start"
                             ? roomTypeColors.gnellen
-                            : room.id.startsWith("static-room")
+                            : room.templateId.startsWith("static")
                                 ? roomTypeColors.static
                                 : room.id === "boss-room"
                                     ? roomTypeColors.boss
@@ -354,6 +416,7 @@ export default function DungeonDisplay() {
                 if (!currentRoom) return;
 
                 const canMove = (newX: number, newY: number) => {
+                    console.log(rooms);
                     const targetRoom = rooms.find((room) =>
                         room.cells.some((cell) => cell.x === newX && cell.y === newY)
                     );
@@ -485,7 +548,12 @@ export default function DungeonDisplay() {
             ...prev,
             randomRooms: [
                 ...prev.randomRooms,
-                { width: 2, height: 2, doorCells: [] },
+                {
+                    width: 2,
+                    height: 2,
+                    doorCells: [],
+                    templateId: Math.random().toString(36).substr(2, 9),
+                },
             ],
         }));
     };
@@ -530,7 +598,6 @@ export default function DungeonDisplay() {
     const viewRoomsAsJson = () => {
         const roomsData = rooms.map((room) => ({
             id: room.id,
-            type: room.type,
             width: room.width,
             height: room.height,
             x: room.x,
@@ -654,8 +721,8 @@ export default function DungeonDisplay() {
                             key={`${x}-${y}`}
                             onClick={() => handleCellClick(x, y)}
                             className={`w-6 h-6 border ${doorCells.some((cell) => cell.x === x && cell.y === y)
-                                    ? "bg-brown-500 border-brown-600"
-                                    : "bg-gray-500 border-gray-600"
+                                ? "bg-brown-500 border-brown-600"
+                                : "bg-gray-500 border-gray-600"
                                 } hover:bg-gray-400 transition-colors`}
                         />
                     ))
@@ -1082,14 +1149,26 @@ export default function DungeonDisplay() {
                                                     max="4"
                                                     value={room.width}
                                                     onChange={(e) =>
-                                                        setRoomSizes((prev) => ({
-                                                            ...prev,
-                                                            randomRooms: prev.randomRooms.map((r, i) =>
-                                                                i === index
-                                                                    ? { ...r, width: Number(e.target.value) }
-                                                                    : r
-                                                            ),
-                                                        }))
+                                                        setRoomSizes((prev) => {
+                                                            const newWidth = Number(e.target.value);
+                                                            const room = prev.randomRooms[index];
+                                                            // Filter out invalid door positions
+                                                            const validDoorCells = room.doorCells.filter(
+                                                                cell => cell.x < newWidth && cell.y < room.height
+                                                            );
+                                                            return {
+                                                                ...prev,
+                                                                randomRooms: prev.randomRooms.map((r, i) =>
+                                                                    i === index
+                                                                        ? {
+                                                                            ...r,
+                                                                            width: newWidth,
+                                                                            doorCells: validDoorCells
+                                                                        }
+                                                                        : r
+                                                                ),
+                                                            };
+                                                        })
                                                     }
                                                     className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
                                                 />
@@ -1100,14 +1179,26 @@ export default function DungeonDisplay() {
                                                     max="4"
                                                     value={room.height}
                                                     onChange={(e) =>
-                                                        setRoomSizes((prev) => ({
-                                                            ...prev,
-                                                            randomRooms: prev.randomRooms.map((r, i) =>
-                                                                i === index
-                                                                    ? { ...r, height: Number(e.target.value) }
-                                                                    : r
-                                                            ),
-                                                        }))
+                                                        setRoomSizes((prev) => {
+                                                            const newHeight = Number(e.target.value);
+                                                            const room = prev.randomRooms[index];
+                                                            // Filter out invalid door positions
+                                                            const validDoorCells = room.doorCells.filter(
+                                                                cell => cell.x < room.width && cell.y < newHeight
+                                                            );
+                                                            return {
+                                                                ...prev,
+                                                                randomRooms: prev.randomRooms.map((r, i) =>
+                                                                    i === index
+                                                                        ? {
+                                                                            ...r,
+                                                                            height: newHeight,
+                                                                            doorCells: validDoorCells
+                                                                        }
+                                                                        : r
+                                                                ),
+                                                            };
+                                                        })
                                                     }
                                                     className="w-16 px-2 py-1 bg-gray-500 border border-gray-400 rounded text-white"
                                                 />

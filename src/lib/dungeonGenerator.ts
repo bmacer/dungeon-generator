@@ -1,4 +1,5 @@
 type DoorDirection = "north" | "south" | "east" | "west";
+type CardinalDirection = DoorDirection;
 
 interface Door {
   x: number;
@@ -8,14 +9,24 @@ interface Door {
 
 interface Room {
   id: string;
-  type: "1x3" | "2x2" | "1x1";
   width: number;
   height: number;
-  x: number; // top-left x coordinate
-  y: number; // top-left y coordinate
-  cells: { x: number; y: number }[]; // all coordinates this room occupies
+  x: number;
+  y: number;
+  cells: Point[];
   doors: Door[];
-  difficulty: number; // Difficulty level of the room
+  difficulty: number;
+  templateId: string;
+}
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface BasePoint extends Point {
+  baseX: number;
+  baseY: number;
 }
 
 interface StaticRoomPosition {
@@ -23,45 +34,67 @@ interface StaticRoomPosition {
   height: number;
   stepsFromPrevious: number;
   index: number;
+  doorCells: Point[];
+  templateId: string;
 }
 
 interface RandomRoom {
   width: number;
   height: number;
   doorCells: { x: number; y: number }[];
-}
-
-interface DoorCell {
-  x: number;
-  y: number;
-}
-
-interface RoomSizes {
-  startRoom: { width: number; height: number };
-  gnellenStartRoom: { width: number; height: number };
-  staticRoomPositions: StaticRoomPosition[];
-  bossRoom: { width: number; height: number };
-  randomRooms: Array<{ width: number; height: number; doorCells?: DoorCell[] }>;
+  templateId: string;
 }
 
 interface RoomTemplate {
   width: number;
   height: number;
+  doorCells: Point[];
+  templateId: string;
+}
+
+interface RoomSizes {
+  startRoom: RoomTemplate;
+  gnellenStartRoom: RoomTemplate;
+  staticRoomPositions: StaticRoomPosition[];
+  bossRoom: RoomTemplate;
+  randomRoomTemplates: RoomTemplate[];
 }
 
 interface FirstRoomConfig {
-  doorOffset: { x: number; y: number };
-  doorDirection: "north" | "south" | "east" | "west";
+  doorOffset: Point;
+  direction: CardinalDirection;
 }
+
+const OPPOSITE_DIRECTIONS: Record<CardinalDirection, CardinalDirection> = {
+  north: "south",
+  south: "north",
+  east: "west",
+  west: "east",
+};
+
+const DIRECTIONS = [
+  { dx: 1, dy: 0, dir: "east" as const },
+  { dx: -1, dy: 0, dir: "west" as const },
+  { dx: 0, dy: -1, dir: "north" as const },
+  { dx: 0, dy: 1, dir: "south" as const },
+] as const;
 
 export class DungeonGenerator {
   private rooms: Room[] = [];
   private grid: boolean[][] = [];
 
   constructor(private gridSize: number = 100) {
-    this.grid = Array.from({ length: gridSize }, () =>
-      new Array(gridSize).fill(false)
+    this.resetGrid();
+  }
+
+  private resetGrid(): void {
+    this.grid = Array.from({ length: this.gridSize }, () =>
+      new Array(this.gridSize).fill(false)
     );
+  }
+
+  private isInBounds(x: number, y: number): boolean {
+    return x >= 0 && x < this.gridSize && y >= 0 && y < this.gridSize;
   }
 
   private canPlaceRoom(
@@ -70,40 +103,22 @@ export class DungeonGenerator {
     x: number,
     y: number,
     lastRoom: Room,
-    lastRoomCell: { x: number; y: number },
-    direction: { dx: number; dy: number; dir: string }
+    lastRoomCell: Point,
+    direction: (typeof DIRECTIONS)[number]
   ): Room | null {
     const possibleRooms: Room[] = [];
-    const roomTypes = ["1x3", "2x2", "1x1"] as const;
 
-    // Try different positions along the direction
     for (let offsetY = -height + 1; offsetY < height; offsetY++) {
       for (let offsetX = -width + 1; offsetX < width; offsetX++) {
         const tryX = x + offsetX;
         const tryY = y + offsetY;
-        let canPlace = true;
 
-        // Check if this position works
-        for (let dx = 0; dx < width; dx++) {
-          for (let dy = 0; dy < height; dy++) {
-            const checkX = tryX + dx;
-            const checkY = tryY + dy;
-
-            if (
-              checkX < 0 ||
-              checkX >= this.gridSize ||
-              checkY < 0 ||
-              checkY >= this.gridSize ||
-              this.grid[checkY][checkX]
-            ) {
-              canPlace = false;
-              break;
-            }
-          }
-          if (!canPlace) break;
+        if (
+          !this.isLocationAvailableForRoom({ x: tryX, y: tryY }, width, height)
+        ) {
+          continue;
         }
 
-        // Check if both door positions would be valid
         const doorX = lastRoomCell.x + direction.dx;
         const doorY = lastRoomCell.y + direction.dy;
         const wouldHaveDoorCell =
@@ -112,7 +127,6 @@ export class DungeonGenerator {
           tryY <= doorY &&
           doorY < tryY + height;
 
-        // Check if both doors can be placed
         const canPlaceFirstDoor = this.isValidDoorPosition(
           lastRoom,
           lastRoomCell.x,
@@ -120,125 +134,254 @@ export class DungeonGenerator {
         );
         const tempRoom: Room = {
           id: "temp",
-          type: "2x2",
           width,
           height,
           x: tryX,
           y: tryY,
-          cells: [],
+          cells: this.generateRoomCells(tryX, tryY, width, height),
           doors: [],
           difficulty: 0,
+          templateId: "",
         };
-        // Mark cells for the temporary room
-        for (let dx = 0; dx < width; dx++) {
-          for (let dy = 0; dy < height; dy++) {
-            tempRoom.cells.push({ x: tryX + dx, y: tryY + dy });
-          }
-        }
+
         const canPlaceSecondDoor = this.isValidDoorPosition(
           tempRoom,
           doorX,
           doorY
         );
 
-        if (
-          canPlace &&
-          wouldHaveDoorCell &&
-          canPlaceFirstDoor &&
-          canPlaceSecondDoor
-        ) {
-          // If we can place a room and both doors
+        if (wouldHaveDoorCell && canPlaceFirstDoor && canPlaceSecondDoor) {
           possibleRooms.push({
-            id: `room-${Math.random().toString(36).substr(2, 9)}`,
-            type: roomTypes[Math.floor(Math.random() * roomTypes.length)],
-            width,
-            height,
-            x: tryX,
-            y: tryY,
-            cells: [],
-            doors: [],
-            difficulty: 0,
+            ...tempRoom,
+            id: this.generateRoomId(),
           });
         }
       }
     }
 
-    // Return a random valid position if any exist
     return possibleRooms.length > 0
       ? possibleRooms[Math.floor(Math.random() * possibleRooms.length)]
       : null;
   }
 
-  private markRoomOnGrid(room: Room) {
-    room.cells = [];
-    for (let dx = 0; dx < room.width; dx++) {
-      for (let dy = 0; dy < room.height; dy++) {
-        const cellX = room.x + dx;
-        const cellY = room.y + dy;
-        this.grid[cellY][cellX] = true;
-        room.cells.push({ x: cellX, y: cellY });
-      }
-    }
+  private generateRoomId(): string {
+    return `room-${Math.random().toString(36).slice(2, 11)}`;
   }
 
-  private isValidDirection(
+  private generateRoomCells(
     x: number,
     y: number,
-    dx: number,
-    dy: number
-  ): boolean {
-    const checkX = x + dx;
-    const checkY = y + dy;
-
-    if (
-      checkX < 0 ||
-      checkX >= this.gridSize ||
-      checkY < 0 ||
-      checkY >= this.gridSize
-    ) {
-      return false;
+    width: number,
+    height: number
+  ): Point[] {
+    const cells: Point[] = [];
+    for (let dx = 0; dx < width; dx++) {
+      for (let dy = 0; dy < height; dy++) {
+        cells.push({ x: x + dx, y: y + dy });
+      }
     }
+    return cells;
+  }
 
-    return !this.grid[checkY][checkX];
+  private markRoomOnGrid(room: Room): void {
+    room.cells = this.generateRoomCells(
+      room.x,
+      room.y,
+      room.width,
+      room.height
+    );
+    room.cells.forEach(({ x, y }) => {
+      this.grid[y][x] = true;
+    });
+  }
+
+  private isValidDirection(point: Point, dx: number, dy: number): boolean {
+    const checkX = point.x + dx;
+    const checkY = point.y + dy;
+    return this.isInBounds(checkX, checkY) && !this.grid[checkY][checkX];
   }
 
   private isValidDoorPosition(room: Room, x: number, y: number): boolean {
-    // First check if the cell exists in the room
     const hasCell = room.cells.some((cell) => cell.x === x && cell.y === y);
     if (!hasCell) return false;
+    return !room.doors.some((door) => door.x === x && door.y === y);
+  }
 
-    // Then check if there's already a door at this position
-    const hasDoor = room.doors.some((door) => door.x === x && door.y === y);
-    return !hasDoor;
+  private isLocationAvailableForRoom(
+    location: { x: number; y: number },
+    roomWidth: number,
+    roomHeight: number
+  ): boolean {
+    let returnValue = true;
+    for (let dx = 0; dx < roomWidth; dx++) {
+      for (let dy = 0; dy < roomHeight; dy++) {
+        const checkX = location.x + dx;
+        const checkY = location.y + dy;
+
+        if (
+          checkX < 0 ||
+          checkX >= this.gridSize ||
+          checkY < 0 ||
+          checkY >= this.gridSize ||
+          this.grid[checkY][checkX]
+        ) {
+          returnValue = false;
+        }
+      }
+    }
+    return returnValue;
+  }
+
+  private isDoorLocationValid(
+    location: {
+      x: number;
+      y: number;
+      baseX: number;
+      baseY: number;
+    },
+    randomRoom: RandomRoom
+  ): boolean {
+    const isWithinRoom = randomRoom.doorCells.some(
+      (cell) => cell.x === location.baseX && cell.y === location.baseY
+    );
+    return isWithinRoom;
+  }
+
+  private createRoom(
+    room: {
+      width: number;
+      height: number;
+      doorCells: Point[];
+      templateId?: string;
+    },
+    location: {
+      x: number;
+      y: number;
+      baseX: number;
+      baseY: number;
+    },
+    doorDirection: "north" | "south" | "east" | "west"
+  ) {
+    let cells = [];
+    for (let dx = 0; dx < room.width; dx++) {
+      for (let dy = 0; dy < room.height; dy++) {
+        cells.push({ x: location.x + dx, y: location.y + dy });
+      }
+    }
+    const newRoom: Room = {
+      id: `room-${Math.random().toString(36).substr(2, 9)}`,
+      width: room.width,
+      height: room.height,
+      x: location.x,
+      y: location.y,
+      cells,
+      doors: [
+        {
+          x: location.x + location.baseX,
+          y: location.y + location.baseY,
+          direction: doorDirection,
+        },
+      ],
+      difficulty: 0,
+      templateId: room.templateId || "",
+    };
+    this.rooms.push(newRoom);
+    this.markRoomOnGrid(newRoom);
+    return newRoom;
+  }
+
+  private getNextDoorLocation(
+    room: Room,
+    randomRoomTemplates: RoomTemplate[],
+    randomLocation: { x: number; y: number; baseX: number; baseY: number }
+  ) {
+    const doorCells = room.doors;
+    console.log("room", room);
+    const template = randomRoomTemplates.find(
+      (t: any) => t.templateId === room.templateId
+    );
+    if (!template) {
+      console.log("no template");
+      throw new Error("Template not found");
+    }
+    const filteredDoorCells = template.doorCells.filter((cell) => {
+      return cell.x !== randomLocation.baseX || cell.y !== randomLocation.baseY;
+    });
+    if (filteredDoorCells.length === 0) {
+      throw new Error("No valid door cells found");
+    }
+    const randomDoorCell =
+      filteredDoorCells[Math.floor(Math.random() * filteredDoorCells.length)];
+    return {
+      x: randomDoorCell.x + randomLocation.x,
+      y: randomDoorCell.y + randomLocation.y,
+      direction: "north",
+    };
+  }
+
+  private addDoorToCurrentRoom(
+    currentRoom: Room,
+    currentRoomDoorLocation: { x: number; y: number; direction: string }
+  ) {
+    currentRoom.doors.push({
+      x: currentRoomDoorLocation.x,
+      y: currentRoomDoorLocation.y,
+      direction: currentRoomDoorLocation.direction as CardinalDirection,
+    });
+
+    return currentRoom;
+  }
+
+  private getBaseCoordinates(
+    direction: CardinalDirection,
+    roomDimensions: { width: number; height: number },
+    offset: number
+  ): BasePoint {
+    switch (direction) {
+      case "east":
+        return { x: 0, y: offset, baseX: 0, baseY: offset };
+      case "west":
+        return {
+          x: roomDimensions.width - 1,
+          y: offset,
+          baseX: roomDimensions.width - 1,
+          baseY: offset,
+        };
+      case "north":
+        return {
+          x: offset,
+          y: roomDimensions.height - 1,
+          baseX: offset,
+          baseY: roomDimensions.height - 1,
+        };
+      case "south":
+        return { x: offset, y: 0, baseX: offset, baseY: 0 };
+    }
   }
 
   createStartRooms(roomSizes: RoomSizes): Room[] {
     const startRoom: Room = {
       id: "start",
-      type: "2x2",
       width: roomSizes.startRoom.width,
       height: roomSizes.startRoom.height,
       x: 50,
       y: 50,
       cells: [],
-      doors: [
-        { x: 51, y: 50, direction: "north" }, // Door to the north room
-      ],
+      doors: [{ x: 51, y: 50, direction: "north" }],
       difficulty: 0,
+      templateId: "",
     };
 
     const gnellenStartRoom: Room = {
       id: "gnellen-start",
-      type: "2x2",
       width: roomSizes.gnellenStartRoom.width,
       height: roomSizes.gnellenStartRoom.height,
       x: 50,
-      y: 48, // Moved up to accommodate size
+      y: 48,
       cells: [],
-      doors: [
-        { x: 51, y: 49, direction: "south" }, // Door to the start room
-      ],
+      doors: [{ x: 51, y: 49, direction: "south" }],
       difficulty: 0,
+      templateId: "",
     };
 
     this.markRoomOnGrid(startRoom);
@@ -248,218 +391,361 @@ export class DungeonGenerator {
     return [startRoom, gnellenStartRoom];
   }
 
+  private addDoorToFirstRoom(firstRoomConfig?: FirstRoomConfig): void {
+    if (!firstRoomConfig) return;
+    const room = this.rooms.find((r) => r.id === "start");
+    room?.doors.push({
+      x: room.x + firstRoomConfig.doorOffset.x,
+      y: room.y + firstRoomConfig.doorOffset.y,
+      direction: firstRoomConfig.direction,
+    });
+  }
+
   createShortestPath(
     pathLength: number,
     roomSizes: RoomSizes,
     firstRoomConfig?: FirstRoomConfig
   ): Room[] {
-    const maxPathAttempts = 5000;
+    const maxPathAttempts = 300;
     let pathAttempt = 0;
     let currentDifficulty = 0;
 
-    while (pathAttempt < maxPathAttempts) {
+    outerLoop: while (pathAttempt < maxPathAttempts) {
       try {
         // Reset state
         this.rooms = [];
-        this.grid = Array.from({ length: this.gridSize }, () =>
-          new Array(this.gridSize).fill(false)
-        );
+        this.resetGrid();
         currentDifficulty = 0;
 
         const startRooms = this.createStartRooms(roomSizes);
-        let lastRoom = startRooms[0];
-        let currentStep = 0;
-        let nextStaticRoomIndex = 0;
+        let currentRoom = this.rooms.find((room) => room.id === "start");
+        if (!currentRoom) {
+          throw new Error("First room not found");
+        }
+        this.addDoorToFirstRoom(firstRoomConfig);
+        const { randomRoomTemplates, staticRoomPositions } = roomSizes;
 
-        const firstRoomDoorOffset = firstRoomConfig?.doorOffset || {
-          x: 1,
-          y: 1,
-        };
+        const directions = [
+          { dx: 1, dy: 0, dir: "east" },
+          { dx: -1, dy: 0, dir: "west" },
+          { dx: 0, dy: -1, dir: "north" },
+          { dx: 0, dy: 1, dir: "south" },
+        ];
 
-        for (let i = 0; i < pathLength; i++) {
-          const isFirstRoom = i === 0;
-          let roomTypes = roomSizes.randomRooms;
-          const isBossRoom = i === pathLength - 1;
-          const nextStaticRoom =
-            roomSizes.staticRoomPositions[nextStaticRoomIndex];
-          const isStaticRoom =
-            nextStaticRoom && currentStep === nextStaticRoom.stepsFromPrevious;
+        let currentRoomDoorLocation: {
+          x: number;
+          y: number;
+          direction: string;
+        } = currentRoom.doors[1];
 
-          // Force static room or boss room size
-          if (isStaticRoom) {
-            roomTypes = [
-              {
-                width: nextStaticRoom.width,
-                height: nextStaticRoom.height,
-              },
-            ];
-          } else if (isBossRoom) {
-            roomTypes = [
-              {
-                width: roomSizes.bossRoom.width,
-                height: roomSizes.bossRoom.height,
-              },
-            ];
+        let potentialNextDirections;
+
+        let createdRooms = 0;
+
+        let staticRoomIndex = 0;
+        let staticRoomSteps = -1;
+        let staticRoomIndexes = [];
+        for (let staticRoom of staticRoomPositions) {
+          staticRoomSteps += staticRoom.stepsFromPrevious;
+          staticRoomIndexes.push(staticRoomSteps);
+        }
+
+        while (true) {
+          if (pathAttempt >= maxPathAttempts) {
+            console.log(`Attempts: ${pathAttempt}`);
+            throw new Error(
+              `xxx Failed to generate path after ${pathAttempt} attempts`
+            );
+          }
+          potentialNextDirections = directions.filter((dir) =>
+            this.isValidDirection(currentRoomDoorLocation, dir.dx, dir.dy)
+          );
+          if (potentialNextDirections.length === 0) {
+            pathAttempt++;
+            continue outerLoop;
           }
 
-          let placed = false;
-          let attempts = 0;
-          const maxAttempts = 1000;
+          let randomDirection:
+            | {
+                dx: number;
+                dy: number;
+                dir: string;
+              }
+            | undefined =
+            potentialNextDirections[
+              Math.floor(Math.random() * potentialNextDirections.length)
+            ];
 
-          while (!placed && attempts < maxAttempts) {
-            const template: RoomTemplate =
-              isStaticRoom || isBossRoom
-                ? roomTypes[0]
-                : roomTypes[Math.floor(Math.random() * roomTypes.length)];
+          currentRoomDoorLocation.direction = randomDirection.dir;
+          if (createdRooms !== 0) {
+            this.addDoorToCurrentRoom(currentRoom, currentRoomDoorLocation);
+          }
+          let newDoorLocation = {
+            x: currentRoomDoorLocation.x + randomDirection.dx,
+            y: currentRoomDoorLocation.y + randomDirection.dy,
+          };
+          const randomIndex = Math.floor(
+            Math.random() * randomRoomTemplates.length
+          );
+          let randomRoom = {
+            ...randomRoomTemplates[randomIndex],
+            doorCells: randomRoomTemplates[randomIndex].doorCells || [],
+          };
+          // console.log("REAL randomRoom", randomRoom);
+          if (staticRoomIndexes.includes(createdRooms)) {
+            newDoorLocation = {
+              x: currentRoomDoorLocation.x + randomDirection.dx,
+              y: currentRoomDoorLocation.y + randomDirection.dy,
+            };
+            let staticRoom = staticRoomPositions[staticRoomIndex];
 
-            // Use configured direction for first room
-            const directions = isFirstRoom
-              ? [
-                  {
-                    dx:
-                      firstRoomConfig?.doorDirection === "east"
-                        ? 1
-                        : firstRoomConfig?.doorDirection === "west"
-                        ? -1
-                        : 0,
-                    dy:
-                      firstRoomConfig?.doorDirection === "south"
-                        ? 1
-                        : firstRoomConfig?.doorDirection === "north"
-                        ? -1
-                        : 0,
-                    dir: firstRoomConfig?.doorDirection || "east",
-                  },
-                ]
-              : [
-                  { dx: 1, dy: 0, dir: "west" },
-                  { dx: -1, dy: 0, dir: "east" },
-                  { dx: 0, dy: -1, dir: "south" },
-                  { dx: 0, dy: 1, dir: "north" },
-                ];
-
-            const validDirections = directions.filter((dir) =>
-              this.isValidDirection(
-                isFirstRoom ? lastRoom.x + firstRoomDoorOffset.x : lastRoom.x,
-                isFirstRoom ? lastRoom.y + firstRoomDoorOffset.y : lastRoom.y,
-                dir.dx,
-                dir.dy
-              )
+            let staticPossibleLocationsForNewRoom = [];
+            if (randomDirection.dir === "west") {
+              for (let i = 0; i < staticRoom.height; i++) {
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  staticRoom,
+                  i
+                );
+                staticPossibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x - staticRoom.width + 1,
+                  y: newDoorLocation.y - i,
+                  baseX,
+                  baseY,
+                });
+              }
+            }
+            if (randomDirection.dir === "east") {
+              for (let i = 0; i < staticRoom.height; i++) {
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  staticRoom,
+                  i
+                );
+                staticPossibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x,
+                  y: newDoorLocation.y - i,
+                  baseX,
+                  baseY,
+                });
+              }
+            }
+            if (randomDirection.dir === "north") {
+              for (let i = 0; i < staticRoom.width; i++) {
+                console.log("newDoorLocation", newDoorLocation);
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  staticRoom,
+                  i
+                );
+                staticPossibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x - i,
+                  y: newDoorLocation.y - staticRoom.height + 1,
+                  baseX,
+                  baseY,
+                });
+              }
+            }
+            if (randomDirection.dir === "south") {
+              for (let i = 0; i < staticRoom.width; i++) {
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  staticRoom,
+                  i
+                );
+                staticPossibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x - i,
+                  y: newDoorLocation.y,
+                  baseX,
+                  baseY,
+                });
+              }
+            }
+            console.log(
+              "staticPossibleLocationsForNewRoom",
+              staticPossibleLocationsForNewRoom
             );
+            staticPossibleLocationsForNewRoom =
+              staticPossibleLocationsForNewRoom.filter((location: any) => {
+                const locationIsAvailable = this.isLocationAvailableForRoom(
+                  location,
+                  staticRoom.width,
+                  staticRoom.height
+                );
+                console.log("locationIsAvailable", locationIsAvailable);
+                const locationIsValid = this.isDoorLocationValid(
+                  location,
+                  staticRoom
+                );
+                console.log(
+                  "locationIsValid",
+                  locationIsValid,
+                  location,
+                  staticRoom
+                );
+                return locationIsAvailable && locationIsValid;
+              });
+            console.log(
+              "2staticPossibleLocationsForNewRoom",
+              staticPossibleLocationsForNewRoom
+            );
+            // return [];
 
-            if (validDirections.length === 0) {
-              attempts++;
-              continue;
+            if (staticPossibleLocationsForNewRoom.length === 0) {
+              pathAttempt++;
+              continue outerLoop;
             }
 
-            const direction =
-              validDirections[
-                Math.floor(Math.random() * validDirections.length)
+            const staticRandomLocation =
+              staticPossibleLocationsForNewRoom[
+                Math.floor(
+                  Math.random() * staticPossibleLocationsForNewRoom.length
+                )
               ];
 
-            // For first room, always connect from the start room's center
-            const doorPosition = isFirstRoom
-              ? {
-                  x: lastRoom.x + firstRoomDoorOffset.x,
-                  y: lastRoom.y + firstRoomDoorOffset.y,
-                }
-              : lastRoom.cells[
-                  Math.floor(Math.random() * lastRoom.cells.length)
-                ];
-
-            const newRoom: Room = {
-              id: isStaticRoom
-                ? `static-room-${nextStaticRoomIndex}`
-                : isBossRoom
-                ? "boss-room"
-                : `room-${i}`,
-              type: "2x2",
-              width: template.width,
-              height: template.height,
-              x: doorPosition.x + direction.dx,
-              y: doorPosition.y + direction.dy,
-              cells: [],
-              doors: [],
-              difficulty: currentDifficulty,
-            };
-
-            const validRoom = this.canPlaceRoom(
-              template.width,
-              template.height,
-              newRoom.x,
-              newRoom.y,
-              lastRoom,
-              doorPosition,
-              direction
+            currentRoom = this.createRoom(
+              staticRoom,
+              staticRandomLocation,
+              OPPOSITE_DIRECTIONS[randomDirection.dir as CardinalDirection]
             );
+            // return this.rooms;
 
-            if (validRoom) {
-              validRoom.id = newRoom.id;
-              validRoom.difficulty = currentDifficulty;
-              this.markRoomOnGrid(validRoom);
+            createdRooms += 1;
+            // Set a new location randomly based on the room and template and doors available
+            currentRoomDoorLocation = this.getNextDoorLocation(
+              currentRoom,
+              staticRoomPositions,
+              staticRandomLocation
+            );
+            // return [];
 
-              const doorDirection = direction.dir as DoorDirection;
-              const oppositeDirections: Record<DoorDirection, DoorDirection> = {
-                north: "south",
-                south: "north",
-                east: "west",
-                west: "east",
-              };
+            console.log("xxx currentRoomDoorLocation", currentRoomDoorLocation);
 
-              // Add door to the last room at the connection point
-              if (
-                this.isValidDoorPosition(
-                  lastRoom,
-                  doorPosition.x,
-                  doorPosition.y
-                )
-              ) {
-                lastRoom.doors.push({
-                  x: doorPosition.x,
-                  y: doorPosition.y,
-                  direction: doorDirection,
+            if (createdRooms >= pathLength) {
+              break;
+            }
+
+            console.log("xxx brandon");
+
+            pathAttempt++;
+
+            staticRoomIndex++;
+          } else {
+            let possibleLocationsForNewRoom = [];
+            if (
+              randomDirection.dir === "east" ||
+              randomDirection.dir === "west"
+            ) {
+              for (let i = 0; i < randomRoom.height; i++) {
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  randomRoom,
+                  i
+                );
+                possibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x,
+                  y: newDoorLocation.y - i,
+                  baseX,
+                  baseY,
                 });
-              }
-
-              // Add matching door to the new room
-              const newDoorX = doorPosition.x + direction.dx;
-              const newDoorY = doorPosition.y + direction.dy;
-              if (this.isValidDoorPosition(validRoom, newDoorX, newDoorY)) {
-                validRoom.doors.push({
-                  x: newDoorX,
-                  y: newDoorY,
-                  direction: oppositeDirections[doorDirection],
-                });
-              }
-
-              this.rooms.push(validRoom);
-              lastRoom = validRoom;
-              placed = true;
-
-              if (isStaticRoom) {
-                currentDifficulty++;
-                nextStaticRoomIndex++;
-                currentStep = 0;
-              } else {
-                currentStep++;
               }
             }
-            attempts++;
-          }
+            if (randomDirection.dir === "north") {
+              for (let i = 0; i < randomRoom.width; i++) {
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  randomRoom,
+                  i
+                );
+                possibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x - i,
+                  y: newDoorLocation.y,
+                  baseX,
+                  baseY,
+                });
+              }
+            }
+            if (randomDirection.dir === "south") {
+              console.log("south");
+              for (let i = 0; i < randomRoom.width; i++) {
+                const { baseX, baseY } = this.getBaseCoordinates(
+                  randomDirection.dir,
+                  randomRoom,
+                  i
+                );
+                possibleLocationsForNewRoom.push({
+                  x: newDoorLocation.x - i,
+                  y: newDoorLocation.y,
+                  baseX,
+                  baseY,
+                });
+              }
+            }
+            console.log(
+              "possibleLocationsForNewRoom",
+              possibleLocationsForNewRoom
+            );
+            possibleLocationsForNewRoom = possibleLocationsForNewRoom.filter(
+              (location: any) =>
+                this.isLocationAvailableForRoom(
+                  location,
+                  randomRoom.width,
+                  randomRoom.height
+                ) && this.isDoorLocationValid(location, randomRoom)
+            );
+            console.log(
+              "2possibleLocationsForNewRoom",
+              possibleLocationsForNewRoom
+            );
+            if (possibleLocationsForNewRoom.length === 0) {
+              pathAttempt++;
+              continue outerLoop;
+            }
 
-          if (!placed) {
-            throw new Error("Room placement failed");
+            const randomLocation =
+              possibleLocationsForNewRoom[
+                Math.floor(Math.random() * possibleLocationsForNewRoom.length)
+              ];
+            console.log("randomLocation", randomLocation);
+            currentRoom = this.createRoom(
+              randomRoom,
+              randomLocation,
+              OPPOSITE_DIRECTIONS[randomDirection.dir as CardinalDirection]
+            );
+            console.log("currentRoom", currentRoom);
+
+            createdRooms += 1;
+
+            // Pick a new random door location
+            let newDoors = this.rooms[createdRooms - 1];
+
+            // Set a new location randomly based on the room and template and doors available
+            currentRoomDoorLocation = this.getNextDoorLocation(
+              currentRoom,
+              randomRoomTemplates,
+              randomLocation
+            );
+
+            if (createdRooms >= pathLength) {
+              break;
+            }
+
+            pathAttempt++;
           }
         }
 
-        return this.rooms;
+        console.log(`Attempts: ${pathAttempt}`);
+        return startRooms;
       } catch {
         pathAttempt++;
         if (pathAttempt >= maxPathAttempts) {
-          throw new Error("Failed to generate path after multiple attempts");
+          throw new Error(
+            `xxx Failed to generate path after ${pathAttempt} attempts`
+          );
         }
       }
     }
+    console.log(`Attempts: ${pathAttempt}`);
 
     throw new Error("Unexpected path generation failure");
   }
@@ -467,7 +753,12 @@ export class DungeonGenerator {
   createOffshoots(
     numOffshoots: number,
     depth: number,
-    randomRooms: Array<{ width: number; height: number }>
+    randomRooms: Array<{
+      width: number;
+      height: number;
+      doorCells: Point[];
+      templateId: string;
+    }>
   ): Room[] {
     const maxOverallAttempts = 500;
     let overallAttempts = 0;
@@ -506,14 +797,20 @@ export class DungeonGenerator {
 
         // Create a branch of rooms up to the specified depth
         for (let d = 0; d < depth; d++) {
-          const randomRoom =
-            randomRooms[Math.floor(Math.random() * randomRooms.length)];
+          const randomIndex = Math.floor(Math.random() * randomRooms.length);
+          const randomRoom = {
+            ...randomRooms[randomIndex],
+            doorCells: randomRooms[randomIndex].doorCells || [],
+          };
 
           let placed = false;
           let attempts = 0;
-          const maxAttempts = 300;
+          const maxAttempts = 3000;
 
           while (!placed && attempts < maxAttempts) {
+            if (attempts % 500 === 0) {
+              console.log("attempts", attempts);
+            }
             const directions = [
               { dx: 1, dy: 0, dir: "east" },
               { dx: -1, dy: 0, dir: "west" },
@@ -522,12 +819,7 @@ export class DungeonGenerator {
             ];
 
             const validDirections = directions.filter((dir) =>
-              this.isValidDirection(
-                currentRoom.x,
-                currentRoom.y,
-                dir.dx,
-                dir.dy
-              )
+              this.isValidDirection(currentRoom, dir.dx, dir.dy)
             );
 
             if (validDirections.length === 0) {
@@ -535,10 +827,9 @@ export class DungeonGenerator {
               continue;
             }
 
-            const direction =
-              validDirections[
-                Math.floor(Math.random() * validDirections.length)
-              ];
+            const direction = validDirections[
+              Math.floor(Math.random() * validDirections.length)
+            ] as (typeof DIRECTIONS)[number];
 
             // Pick a random cell from the current room to connect from
             const currentRoomCell =
@@ -546,9 +837,20 @@ export class DungeonGenerator {
                 Math.floor(Math.random() * currentRoom.cells.length)
               ];
 
+            // Get base coordinates for door placement
+            const { baseX, baseY } = this.getBaseCoordinates(
+              direction.dir,
+              randomRoom,
+              Math.floor(
+                Math.random() *
+                  (direction.dir === "east" || direction.dir === "west"
+                    ? randomRoom.width
+                    : randomRoom.height)
+              )
+            );
+
             const newRoom: Room = {
               id: `offshoot-${createdOffshoots.length}-${d}`,
-              type: "2x2", // Default type, actual dimensions come from template
               width: randomRoom.width,
               height: randomRoom.height,
               x: currentRoomCell.x + direction.dx,
@@ -556,17 +858,31 @@ export class DungeonGenerator {
               cells: [],
               doors: [],
               difficulty: startingDifficulty,
+              templateId: randomRoom.templateId,
             };
 
-            const validRoom = this.canPlaceRoom(
-              randomRoom.width,
-              randomRoom.height,
-              newRoom.x,
-              newRoom.y,
-              currentRoom,
-              currentRoomCell,
-              direction
+            // Check if door location is valid according to template
+            const isDoorValid = this.isDoorLocationValid(
+              {
+                x: newRoom.x,
+                y: newRoom.y,
+                baseX,
+                baseY,
+              },
+              randomRoom
             );
+
+            const validRoom = isDoorValid
+              ? this.canPlaceRoom(
+                  randomRoom.width,
+                  randomRoom.height,
+                  newRoom.x,
+                  newRoom.y,
+                  currentRoom,
+                  currentRoomCell,
+                  direction
+                )
+              : null;
             if (validRoom) {
               validRoom.id = newRoom.id;
               validRoom.difficulty = startingDifficulty;
