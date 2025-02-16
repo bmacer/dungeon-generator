@@ -10,7 +10,7 @@ import {
 } from "../lib/dungeonGenerator";
 import dynamic from "next/dynamic";
 
-const CELL_SIZE = 30;
+const CELL_SIZE = 40;
 const GRID_SIZE = 100;
 const COORD_SIZE = 20;
 
@@ -37,17 +37,17 @@ const categoryDescriptions: Record<RoomCategory, string> = {
 // Default room configurations that can be customized
 const defaultRoomConfigs: RoomConfig[] = [
     {
-        id: "A",
+        id: "RoomTemplateA",
         doors: ["N", "S"],
         weight: 0.33,
     },
     {
-        id: "B",
+        id: "RoomTemplateB",
         doors: ["N", "S", "E", "W"],
         weight: 0.34,
     },
     {
-        id: "C",
+        id: "RoomTemplateC",
         doors: ["E", "W"],
         weight: 0.33,
     },
@@ -61,11 +61,11 @@ function DungeonDisplay() {
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Configuration state
-    const [totalRooms, setTotalRooms] = useState(20);
+    const [totalRooms, setTotalRooms] = useState(10);
     const [offshoots, setOffshoots] = useState([{ count: 3, depth: 2 }]);
     const [staticRooms, setStaticRooms] = useState<
         { index: number; type: RoomConfig["id"] }[]
-    >([{ index: 3, type: "A" }]);
+    >([{ index: 3, type: "StaticRoomTemplateX" }]);
     const [roomConfigs, setRoomConfigs] =
         useState<RoomConfig[]>(defaultRoomConfigs);
     const [shortcuts, setShortcuts] = useState(2);
@@ -80,6 +80,38 @@ function DungeonDisplay() {
     // Replace the static width calculation with state
     const [containerWidth, setContainerWidth] = useState(800);
     const [containerHeight, setContainerHeight] = useState(800);
+
+    const [showJsonPopup, setShowJsonPopup] = useState(false); // State for popup visibility
+
+    // Add new state for JSON view mode
+    const [jsonViewMode, setJsonViewMode] = useState<"full" | "simplified">(
+        "full"
+    );
+
+    // Add new state for static room configs
+    const [staticRoomConfigs, setStaticRoomConfigs] = useState<RoomConfig[]>([
+        {
+            id: "StaticRoomTemplateX",
+            doors: ["N", "S"],
+            weight: 0,
+            category: "STATIC",
+            isSpecial: true,
+        },
+        {
+            id: "StaticRoomTemplateY",
+            doors: ["N", "S", "E", "W"],
+            weight: 0,
+            category: "STATIC",
+            isSpecial: true,
+        },
+        {
+            id: "StaticRoomTemplateZ",
+            doors: ["E", "W"],
+            weight: 0,
+            category: "STATIC",
+            isSpecial: true,
+        },
+    ]);
 
     // Add useEffect to handle window-dependent calculations
     useEffect(() => {
@@ -130,13 +162,21 @@ function DungeonDisplay() {
             offshoots,
             staticRooms,
             roomConfigs,
+            staticRoomConfigs,
             shortcuts,
         });
         const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
             generator.generate();
         setDungeon(generatedRooms);
         setFastestPathSteps(newFastestPathSteps);
-    }, [totalRooms, offshoots, staticRooms, roomConfigs, shortcuts]);
+    }, [
+        totalRooms,
+        offshoots,
+        staticRooms,
+        roomConfigs,
+        staticRoomConfigs,
+        shortcuts,
+    ]);
 
     const centerView = useCallback(() => {
         if (containerRef.current) {
@@ -172,7 +212,10 @@ function DungeonDisplay() {
     };
 
     const addStaticRoom = () => {
-        setStaticRooms([...staticRooms, { index: 0, type: roomConfigs[0].id }]);
+        setStaticRooms([
+            ...staticRooms,
+            { index: totalRooms, type: staticRoomConfigs[0].id },
+        ]);
     };
 
     const updateStaticRoom = (
@@ -182,7 +225,7 @@ function DungeonDisplay() {
     ) => {
         const newStaticRooms = [...staticRooms];
         if (field === "type") {
-            if (roomConfigs.some((config) => config.id === value)) {
+            if (staticRoomConfigs.some((config) => config.id === value)) {
                 newStaticRooms[index] = {
                     ...newStaticRooms[index],
                     [field]: value as string,
@@ -283,6 +326,29 @@ function DungeonDisplay() {
         }
     };
 
+    // Add function to simplify JSON
+    const getSimplifiedDungeon = useCallback(() => {
+        return dungeon.map(({ x, y, category, ...room }) => room);
+    }, [dungeon]);
+
+    // Update handleExportJson
+    const handleExportJson = () => {
+        const data = jsonViewMode === "full" ? dungeon : getSimplifiedDungeon();
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "dungeon.json";
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // Function to toggle JSON popup visibility
+    const toggleJsonPopup = () => {
+        setShowJsonPopup((prev) => !prev);
+    };
+
     useEffect(() => {
         const initDungeon = () => {
             generateDungeon();
@@ -291,8 +357,49 @@ function DungeonDisplay() {
         initDungeon();
     }, [generateDungeon, centerView]); // Empty dependency array since this should only run once on mount
 
+    // Add functions to manage static room configs
+    const addStaticRoomConfig = () => {
+        setStaticRoomConfigs([
+            ...staticRoomConfigs,
+            {
+                id: `StaticRoomTemplate${String.fromCharCode(
+                    65 + staticRoomConfigs.length
+                )}`,
+                doors: [],
+                weight: 0,
+                category: "STATIC",
+                isSpecial: true,
+            },
+        ]);
+    };
+
+    const updateStaticRoomConfig = (
+        index: number,
+        field: keyof RoomConfig,
+        value: RoomConfigUpdateValue
+    ) => {
+        const newConfigs = [...staticRoomConfigs];
+        if (field === "doors") {
+            const door = value as Door;
+            const doors = new Set(newConfigs[index].doors);
+            if (doors.has(door)) {
+                doors.delete(door);
+            } else {
+                doors.add(door);
+            }
+            newConfigs[index] = { ...newConfigs[index], doors: Array.from(doors) };
+        } else {
+            newConfigs[index] = { ...newConfigs[index], [field]: value };
+        }
+        setStaticRoomConfigs(newConfigs);
+    };
+
+    const removeStaticRoomConfig = (index: number) => {
+        setStaticRoomConfigs(staticRoomConfigs.filter((_, i) => i !== index));
+    };
+
     return (
-        <div className="p-4 text-black">
+        <div className="p-4 text-black" style={{ overflowX: 'hidden' }}>
             <div className="mb-6 space-y-4">
                 <div className="space-y-2">
                     <h3 className="font-bold">Basic Configuration</h3>
@@ -408,9 +515,9 @@ function DungeonDisplay() {
                                 onChange={(e) => updateStaticRoom(i, "type", e.target.value)}
                                 className="border p-1 rounded"
                             >
-                                {roomConfigs.map((config) => (
+                                {staticRoomConfigs.map((config) => (
                                     <option key={config.id} value={config.id}>
-                                        Room {config.id}
+                                        {config.id}
                                     </option>
                                 ))}
                             </select>
@@ -420,6 +527,52 @@ function DungeonDisplay() {
                             >
                                 Remove
                             </button>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-bold">Static Room Types</h3>
+                        <button
+                            onClick={addStaticRoomConfig}
+                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                        >
+                            Add Static Room Type
+                        </button>
+                    </div>
+                    {staticRoomConfigs.map((config, i) => (
+                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
+                            <div className="flex items-center gap-2">
+                                <label>ID:</label>
+                                <input
+                                    type="text"
+                                    value={config.id}
+                                    onChange={(e) =>
+                                        updateStaticRoomConfig(i, "id", e.target.value)
+                                    }
+                                    className="border p-1 rounded w-64"
+                                />
+                                <button
+                                    onClick={() => removeStaticRoomConfig(i)}
+                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <label>Doors:</label>
+                                {(["N", "S", "E", "W"] as const).map((door) => (
+                                    <label key={door} className="flex items-center gap-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={config.doors.includes(door)}
+                                            onChange={() => updateStaticRoomConfig(i, "doors", door)}
+                                        />
+                                        {door}
+                                    </label>
+                                ))}
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -442,7 +595,7 @@ function DungeonDisplay() {
                                     type="text"
                                     value={config.id}
                                     onChange={(e) => updateRoomConfig(i, "id", e.target.value)}
-                                    className="border p-1 rounded w-32"
+                                    className="border p-1 rounded w-64"
                                 />
                                 <label>Weight:</label>
                                 <input
@@ -485,18 +638,18 @@ function DungeonDisplay() {
                 </div>
             </div>
 
-            <div className="flex gap-2 mb-4">
-                <button
-                    onClick={generateDungeon}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                    Generate Dungeon
-                </button>
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
                 <button
                     onClick={centerView}
                     className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
                 >
                     Center View
+                </button>
+                <button
+                    onClick={generateDungeon}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                    Generate Dungeon
                 </button>
             </div>
 
@@ -553,7 +706,7 @@ function DungeonDisplay() {
                                 border: "1px solid black",
                                 zIndex: 1,
                             }}
-                            title={`Type: ${room.type}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
+                            title={`Template: ${room.templateId}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
                         >
                             {room.doors.map((door) => (
                                 <div
@@ -601,7 +754,13 @@ function DungeonDisplay() {
                                 />
                             ))}
                             <div className="text-[8px] text-center text-white font-bold flex flex-col">
-                                <span>{room.type}</span>
+                                <span>
+                                    {["START", "GNELLEN", "BOSS"].includes(room.category)
+                                        ? room.templateId[0]
+                                        : room.category === "STATIC"
+                                            ? room.templateId.replace("StaticRoomTemplate", "")
+                                            : room.templateId.slice(-1)}
+                                </span>
                                 <span className="text-[6px]">
                                     {room.id.split("-")[0].slice(0, 5)}
                                 </span>
@@ -612,6 +771,69 @@ function DungeonDisplay() {
             </div>
 
             {renderLegend()}
+
+            {/* Button to show JSON popup */}
+            <button
+                onClick={toggleJsonPopup}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-4"
+            >
+                Show JSON
+            </button>
+
+            {/* JSON Popup */}
+            {showJsonPopup && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                    <div
+                        className="bg-white p-4 rounded shadow-lg"
+                        style={{ maxHeight: "80vh", overflowY: "auto" }}
+                    >
+                        <div className="flex justify-between mb-2">
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setJsonViewMode("full")}
+                                    className={`px-2 py-1 rounded ${jsonViewMode === "full"
+                                        ? "bg-blue-500 text-white"
+                                        : "bg-gray-200"
+                                        }`}
+                                >
+                                    Full
+                                </button>
+                                <button
+                                    onClick={() => setJsonViewMode("simplified")}
+                                    className={`px-2 py-1 rounded ${jsonViewMode === "simplified"
+                                        ? "bg-blue-500 text-white"
+                                        : "bg-gray-200"
+                                        }`}
+                                >
+                                    Simplified
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleExportJson}
+                                    className="px-2 py-1 bg-green-500 text-white rounded"
+                                >
+                                    Export
+                                </button>
+                                <button
+                                    onClick={toggleJsonPopup}
+                                    className="px-2 py-1 bg-red-500 text-white rounded"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                        <h3 className="font-bold mb-2">Dungeon JSON</h3>
+                        <pre className="whitespace-pre-wrap">
+                            {JSON.stringify(
+                                jsonViewMode === "full" ? dungeon : getSimplifiedDungeon(),
+                                null,
+                                2
+                            )}
+                        </pre>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
