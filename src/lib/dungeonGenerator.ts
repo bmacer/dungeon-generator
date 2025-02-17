@@ -1,4 +1,4 @@
-export type Door = "N" | "S" | "E" | "W";
+export type Door = "N" | "S" | "E" | "W" | "I" | "O";
 export type RoomCategory =
   | "START"
   | "GNELLEN"
@@ -32,9 +32,11 @@ export interface Room {
   doors: DoorConnection[]; // Changed from Door[] to DoorConnection[]
   isStatic?: boolean;
   category: RoomCategory;
+  expnum: number; // New field
 }
 
 export interface DungeonConfig {
+  expnum: number;
   totalRooms: number;
   offshoots: { count: number; depth: number }[];
   staticRooms: { index: number; type: string }[];
@@ -50,7 +52,14 @@ const CENTER = Math.floor(GRID_SIZE / 2);
 const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
   {
     id: "StartingRoom",
-    doors: ["W", "N"],
+    doors: ["E", "N", "O"],
+    weight: 0,
+    category: "START",
+    isSpecial: true,
+  },
+  {
+    id: "EnRouteToDestination",
+    doors: ["I"],
     weight: 0,
     category: "START",
     isSpecial: true,
@@ -64,14 +73,14 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
   },
   {
     id: "GnellenRoom",
-    doors: ["E"],
+    doors: ["S"],
     weight: 0,
     category: "GNELLEN",
     isSpecial: true,
   },
   {
     id: "RoomTemplateA",
-    doors: ["N", "S"],
+    doors: ["N", "S", "E", "W"],
     weight: 0.33,
   },
   {
@@ -90,7 +99,7 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
 const STATIC_ROOM_CONFIGS: RoomConfig[] = [
   {
     id: "StaticRoomTemplateX",
-    doors: ["N", "S"],
+    doors: ["N", "S", "E", "W"],
     weight: 0,
     category: "STATIC",
     isSpecial: true,
@@ -227,6 +236,8 @@ export class DungeonGenerator {
       S: "N",
       E: "W",
       W: "E",
+      I: "O",
+      O: "I",
     };
 
     if (!baseDoors.includes(oppositeMap[direction])) {
@@ -238,7 +249,15 @@ export class DungeonGenerator {
   }
 
   private placeRoom(room: Room): void {
-    this.grid[room.y][room.x] = room;
+    // Only place in grid if coordinates are valid
+    if (
+      room.x >= 0 &&
+      room.y >= 0 &&
+      room.x < GRID_SIZE &&
+      room.y < GRID_SIZE
+    ) {
+      this.grid[room.y][room.x] = room;
+    }
     this.rooms.push(room);
   }
 
@@ -268,6 +287,7 @@ export class DungeonGenerator {
       y,
       depth,
       category,
+      expnum: this.config.expnum, // Add expnum when creating a room
       doors: doorDirections.map((dir) => ({
         direction: dir,
         destinationRoomId: "", // Will be set when connecting rooms
@@ -282,6 +302,8 @@ export class DungeonGenerator {
       S: "N",
       E: "W",
       W: "E",
+      I: "O",
+      O: "I",
     };
     const oppositeDirection = oppositeMap[direction];
 
@@ -314,33 +336,59 @@ export class DungeonGenerator {
     }
   }
 
+  private determineOrder(): boolean[] {
+    const order = new Array(this.config.totalRooms).fill(false);
+    this.config.staticRooms.forEach(({ index }) => {
+      if (index < order.length) {
+        order[index] = true;
+      }
+    });
+    return order;
+  }
+
   private generateMainPath(): void {
+    const staticOrder = this.determineOrder();
+    this.currentDepth = 0;
+
     // Create start room
     const startRoom = this.createRoom(
       "StartingRoom",
       CENTER,
       CENTER,
-      0,
+      0, // Start room is always depth 0
       "START",
       this.determineRoomDoors("StartingRoom")
+    );
+
+    // Create EnRouteToDestination room
+    const enRouteRoom = this.createRoom(
+      "EnRouteToDestination",
+      -1,
+      -1,
+      0,
+      "START",
+      this.determineRoomDoors("EnRouteToDestination")
     );
 
     // Create Gnellen room
     const gnellenRoom = this.createRoom(
       "GnellenRoom",
-      CENTER - 1,
       CENTER,
-      0,
+      CENTER - 1,
+      0, // Gnellen room is always depth 0
       "GNELLEN",
       this.determineRoomDoors("GnellenRoom")
     );
 
     this.placeRoom(startRoom);
+    this.placeRoom(enRouteRoom);
     this.placeRoom(gnellenRoom);
-    this.connectRooms(startRoom, gnellenRoom, "W");
+    this.connectRooms(startRoom, enRouteRoom, "O");
+    this.connectRooms(startRoom, gnellenRoom, "N");
 
     let currentRoom = startRoom;
     let remainingRooms = this.config.totalRooms - 1;
+    let currentIndex = 1; // Start at 1 since we've placed start room
 
     // Keep track of attempts to place rooms
     let attempts = 0;
@@ -392,6 +440,11 @@ export class DungeonGenerator {
           break;
       }
 
+      // Update depth if this is a static room
+      if (staticOrder[currentIndex]) {
+        this.currentDepth++;
+      }
+
       const roomType =
         remainingRooms === 1 ? "BossRoom" : this.getRandomRoomType();
       const doorDirections = this.getMatchingDoors(direction, roomType);
@@ -412,7 +465,8 @@ export class DungeonGenerator {
       this.connectRooms(currentRoom, newRoom, direction);
       currentRoom = newRoom;
       remainingRooms--;
-      attempts = 0; // Reset attempts after successful placement
+      currentIndex++;
+      attempts = 0;
     }
 
     // If we didn't place a boss room, force place it
@@ -573,7 +627,9 @@ export class DungeonGenerator {
   }
 
   private placeStaticRooms(): boolean {
+    let staticRoomsPlaced = 0;
     for (const staticRoom of this.config.staticRooms) {
+      staticRoomsPlaced++;
       if (staticRoom.index < this.rooms.length) {
         const oldRoom = this.rooms[staticRoom.index];
         const doorDirections = this.determineRoomDoors(staticRoom.type);
@@ -598,7 +654,7 @@ export class DungeonGenerator {
           staticRoom.type,
           oldRoom.x,
           oldRoom.y,
-          ++this.currentDepth,
+          staticRoomsPlaced,
           "STATIC",
           doorDirections
         );
@@ -649,6 +705,8 @@ export class DungeonGenerator {
             S: "N",
             E: "W",
             W: "E",
+            I: "O",
+            O: "I",
           };
           const oppositeDirection = oppositeMap[direction];
 
@@ -682,6 +740,8 @@ export class DungeonGenerator {
       S: "N",
       E: "W",
       W: "E",
+      I: "O",
+      O: "I",
     };
 
     // Randomly select and create shortcuts
@@ -699,14 +759,13 @@ export class DungeonGenerator {
       );
       if (door1) door1.isShortcut = true;
       if (door2) door2.isShortcut = true;
-      console.log("Added shortcut:", room1.id, room2.id, direction);
 
       shortcuts.splice(index, 1);
     }
   }
 
-  generate(): { rooms: Room[]; fastestPathSteps: number } {
-    const maxAttempts = 100; // Prevent infinite loops
+  generate(): { rooms: Room[]; fastestPathSteps: number; expnum: number } {
+    const maxAttempts = 500; // Prevent infinite loops
     let attempts = 0;
 
     while (attempts < maxAttempts) {
@@ -740,7 +799,11 @@ export class DungeonGenerator {
 
       // If we got here, both static rooms and offshoots were successful
       this.generateShortcuts();
-      return { rooms: this.rooms, fastestPathSteps: this.testFastestPath() };
+      return {
+        rooms: this.rooms,
+        fastestPathSteps: this.testFastestPath(),
+        expnum: this.config.expnum,
+      };
     }
 
     throw new Error(

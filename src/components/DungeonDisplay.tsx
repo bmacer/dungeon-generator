@@ -61,11 +61,11 @@ function DungeonDisplay() {
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Configuration state
-    const [totalRooms, setTotalRooms] = useState(10);
-    const [offshoots, setOffshoots] = useState([{ count: 3, depth: 2 }]);
+    const [totalRooms, setTotalRooms] = useState(5);
+    const [offshoots, setOffshoots] = useState([{ count: 1, depth: 1 }]);
     const [staticRooms, setStaticRooms] = useState<
         { index: number; type: RoomConfig["id"] }[]
-    >([{ index: 3, type: "StaticRoomTemplateX" }]);
+    >([{ index: 5, type: "StaticRoomTemplateX" }]);
     const [roomConfigs, setRoomConfigs] =
         useState<RoomConfig[]>(defaultRoomConfigs);
     const [shortcuts, setShortcuts] = useState(2);
@@ -113,6 +113,8 @@ function DungeonDisplay() {
         },
     ]);
 
+    const [expnum, setExpnum] = useState(101); // Default to 101
+
     // Add useEffect to handle window-dependent calculations
     useEffect(() => {
         setContainerWidth(Math.min(800, window.innerWidth - 32));
@@ -158,6 +160,7 @@ function DungeonDisplay() {
 
     const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator({
+            expnum, // Add expnum to the config
             totalRooms,
             offshoots,
             staticRooms,
@@ -165,11 +168,15 @@ function DungeonDisplay() {
             staticRoomConfigs,
             shortcuts,
         });
-        const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
-            generator.generate();
+        const {
+            rooms: generatedRooms,
+            fastestPathSteps: newFastestPathSteps,
+            expnum: generatedExpnum,
+        } = generator.generate();
         setDungeon(generatedRooms);
         setFastestPathSteps(newFastestPathSteps);
     }, [
+        expnum, // Add to dependencies
         totalRooms,
         offshoots,
         staticRooms,
@@ -328,7 +335,10 @@ function DungeonDisplay() {
 
     // Add function to simplify JSON
     const getSimplifiedDungeon = useCallback(() => {
-        return dungeon.map(({ x, y, category, ...room }) => room);
+        return dungeon.map(({ x, y, category, ...room }) => ({
+            ...room,
+            doors: room.doors.map(({ destinationDoor, ...doorInfo }) => doorInfo),
+        }));
     }, [dungeon]);
 
     // Update handleExportJson
@@ -399,11 +409,21 @@ function DungeonDisplay() {
     };
 
     return (
-        <div className="p-4 text-black" style={{ overflowX: 'hidden' }}>
+        <div className="p-4 text-black" style={{ overflowX: "hidden" }}>
             <div className="mb-6 space-y-4">
                 <div className="space-y-2">
                     <h3 className="font-bold">Basic Configuration</h3>
                     <div className="flex items-center gap-2">
+                        <label>Expedition Number:</label>
+                        <input
+                            type="number"
+                            value={expnum}
+                            onChange={(e) =>
+                                setExpnum(Math.max(1, parseInt(e.target.value) || 101))
+                            }
+                            className="border p-1 rounded w-20"
+                            min="1"
+                        />
                         <label>Total Rooms:</label>
                         <input
                             type="number"
@@ -651,6 +671,12 @@ function DungeonDisplay() {
                 >
                     Generate Dungeon
                 </button>
+                <button
+                    onClick={toggleJsonPopup}
+                    className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                >
+                    Show JSON
+                </button>
             </div>
 
             {fastestPathSteps !== null && (
@@ -760,6 +786,7 @@ function DungeonDisplay() {
                                         : room.category === "STATIC"
                                             ? room.templateId.replace("StaticRoomTemplate", "")
                                             : room.templateId.slice(-1)}
+                                    {` (${room.depth})`}
                                 </span>
                                 <span className="text-[6px]">
                                     {room.id.split("-")[0].slice(0, 5)}
@@ -771,14 +798,6 @@ function DungeonDisplay() {
             </div>
 
             {renderLegend()}
-
-            {/* Button to show JSON popup */}
-            <button
-                onClick={toggleJsonPopup}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-4"
-            >
-                Show JSON
-            </button>
 
             {/* JSON Popup */}
             {showJsonPopup && (
