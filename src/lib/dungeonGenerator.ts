@@ -194,10 +194,36 @@ export class DungeonGenerator {
     });
   }
 
-  private getRandomRoomType(): string {
-    const rand = Math.random();
-    const selected = this.normalizedWeights.find((w) => rand <= w.weight);
-    return selected?.id || this.normalizedWeights[0].id;
+  private getRandomRoomType(requiredDoor?: Door): string {
+    // Filter room configs to only those with compatible doors
+    const compatibleRooms = this.normalizedWeights.filter(({ id }) => {
+      const config = this.roomConfigs.get(id);
+      if (!config || !requiredDoor) return true;
+
+      const oppositeMap: Record<Door, Door> = {
+        N: "S",
+        S: "N",
+        E: "W",
+        W: "E",
+        I: "O",
+        O: "I",
+      };
+
+      return config.doors.includes(oppositeMap[requiredDoor]);
+    });
+
+    if (compatibleRooms.length === 0) {
+      // If no compatible rooms found, default to RoomTemplateB which has all doors
+      return "RoomTemplateB";
+    }
+
+    const totalWeight = compatibleRooms.reduce(
+      (sum, { weight }) => sum + weight,
+      0
+    );
+    const rand = Math.random() * totalWeight;
+    const selected = compatibleRooms.find(({ weight }) => rand <= weight);
+    return selected?.id || compatibleRooms[0].id;
   }
 
   private determineRoomDoors(type: string): Door[] {
@@ -510,7 +536,7 @@ export class DungeonGenerator {
       }
 
       const roomType =
-        remainingRooms === 1 ? "BossRoom" : this.getRandomRoomType();
+        remainingRooms === 1 ? "BossRoom" : this.getRandomRoomType(direction);
       const doorDirections = this.getMatchingDoors(direction, roomType);
       const config = this.roomConfigs.get(roomType);
       const category =
@@ -663,7 +689,7 @@ export class DungeonGenerator {
               break;
           }
 
-          const roomType = this.getRandomRoomType();
+          const roomType = this.getRandomRoomType(direction);
           const doorDirections = this.getMatchingDoors(direction, roomType);
 
           const newRoom = this.createRoom(
