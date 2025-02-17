@@ -118,7 +118,7 @@ function DungeonDisplay() {
     });
     const [expnum, setExpnum] = useState(() => {
         const saved = localStorage.getItem("expnum");
-        return saved ? parseInt(saved) : 101;
+        return saved ? parseInt(saved) : 100;
     });
 
     const generateDungeon = useCallback(() => {
@@ -207,7 +207,7 @@ function DungeonDisplay() {
         setRoomConfigs(defaultRoomConfigs);
         setShortcuts(2);
         setStaticRoomConfigs(defaultStaticRoomConfigs);
-        setExpnum(101);
+        setExpnum(100);
     }, []);
 
     const [zoomLevel, setZoomLevel] = useState(1);
@@ -426,11 +426,16 @@ function DungeonDisplay() {
             templateId,
             depth,
             expnum,
-            doors: doors.map(({ direction, destinationRoomId, isShortcut }) => ({
-                direction,
-                destinationRoomId,
-                isShortcut,
-            })),
+            doors: doors
+                .filter((door) => door.destinationRoomId) // Only include doors with a destination
+                .map(
+                    ({ direction, destinationRoomId, isShortcut, destinationDoor }) => ({
+                        direction,
+                        destinationRoomId,
+                        destinationDoor,
+                        isShortcut,
+                    })
+                ),
         }));
     }, [dungeon]);
 
@@ -633,7 +638,7 @@ function DungeonDisplay() {
                             type="number"
                             value={expnum}
                             onChange={(e) =>
-                                setExpnum(Math.max(1, parseInt(e.target.value) || 101))
+                                setExpnum(Math.max(1, parseInt(e.target.value) || 100))
                             }
                             className="border p-1 rounded w-20"
                             min="1"
