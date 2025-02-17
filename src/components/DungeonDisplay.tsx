@@ -38,18 +38,28 @@ const categoryDescriptions: Record<RoomCategory, string> = {
 const defaultRoomConfigs: RoomConfig[] = [
     {
         id: "RoomTemplateA",
-        doors: ["N", "S"],
-        weight: 0.33,
+        doors: ["W", "E"],
+        weight: 0.2,
     },
     {
         id: "RoomTemplateB",
-        doors: ["N", "S", "E", "W"],
-        weight: 0.34,
+        doors: ["N", "S"],
+        weight: 0.2,
     },
     {
         id: "RoomTemplateC",
-        doors: ["E", "W"],
-        weight: 0.33,
+        doors: ["N", "S", "W", "E"],
+        weight: 0.2,
+    },
+    {
+        id: "RoomTemplateD",
+        doors: ["N", "S", "W", "E"],
+        weight: 0.2,
+    },
+    {
+        id: "RoomTemplateE",
+        doors: ["N", "S", "W", "E"],
+        weight: 0.2,
     },
 ];
 
@@ -121,6 +131,11 @@ function DungeonDisplay() {
         return saved ? parseInt(saved) : 100;
     });
 
+    const [defaultVariations, setDefaultVariations] = useState(() => {
+        const saved = localStorage.getItem("defaultVariations");
+        return saved ? parseInt(saved) : 2;
+    });
+
     const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator({
             expnum,
@@ -130,6 +145,7 @@ function DungeonDisplay() {
             roomConfigs,
             staticRoomConfigs,
             shortcuts,
+            defaultVariations,
         });
         const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
             generator.generate();
@@ -143,6 +159,7 @@ function DungeonDisplay() {
         roomConfigs,
         staticRoomConfigs,
         shortcuts,
+        defaultVariations,
     ]);
 
     const centerView = useCallback(() => {
@@ -192,6 +209,10 @@ function DungeonDisplay() {
         localStorage.setItem("expnum", expnum.toString());
     }, [expnum]);
 
+    useEffect(() => {
+        localStorage.setItem("defaultVariations", defaultVariations.toString());
+    }, [defaultVariations]);
+
     const clearMemory = useCallback(() => {
         localStorage.removeItem("totalRooms");
         localStorage.removeItem("offshoots");
@@ -200,6 +221,7 @@ function DungeonDisplay() {
         localStorage.removeItem("shortcuts");
         localStorage.removeItem("staticRoomConfigs");
         localStorage.removeItem("expnum");
+        localStorage.removeItem("defaultVariations");
 
         setTotalRooms(12);
         setOffshoots(defaultOffshoots);
@@ -208,6 +230,7 @@ function DungeonDisplay() {
         setShortcuts(2);
         setStaticRoomConfigs(defaultStaticRoomConfigs);
         setExpnum(100);
+        setDefaultVariations(2);
     }, []);
 
     const [zoomLevel, setZoomLevel] = useState(1);
@@ -555,7 +578,7 @@ function DungeonDisplay() {
                                 border: "1px solid black",
                                 zIndex: 1,
                             }}
-                            title={`Template: ${room.templateId}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
+                            title={`Base Template: ${room.baseTemplateId}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
                         >
                             {room.doors.map((door) => (
                                 <div
@@ -605,15 +628,18 @@ function DungeonDisplay() {
                             <div className="text-[8px] text-center text-white font-bold flex flex-col">
                                 <span>
                                     {["START", "GNELLEN", "BOSS"].includes(room.category)
-                                        ? room.templateId[0]
+                                        ? room.baseTemplateId[0]
                                         : room.category === "STATIC"
-                                            ? room.templateId.replace("StaticRoomTemplate", "")
-                                            : room.templateId.slice(-1)}
+                                            ? room.baseTemplateId.replace("StaticRoomTemplate", "")
+                                            : room.baseTemplateId.slice(-1)}
                                     {` (${room.depth})`}
                                 </span>
                                 <span className="text-[6px]">
                                     {room.id.split("-")[0].slice(0, 5)}
                                 </span>
+                                {!["START", "GNELLEN", "BOSS", "STATIC"].includes(
+                                    room.category
+                                ) && <span className="text-[6px]">v{room.variation + 1}</span>}
                             </div>
                         </div>
                     ))}
@@ -662,6 +688,16 @@ function DungeonDisplay() {
                             }
                             className="border p-1 rounded w-20"
                             min="0"
+                        />
+                        <label className="ml-4">Default Variations:</label>
+                        <input
+                            type="number"
+                            value={defaultVariations}
+                            onChange={(e) =>
+                                setDefaultVariations(Math.max(1, parseInt(e.target.value) || 1))
+                            }
+                            className="border p-1 rounded w-20"
+                            min="1"
                         />
                     </div>
                 </div>
@@ -816,6 +852,22 @@ function DungeonDisplay() {
                                     </label>
                                 ))}
                             </div>
+                            <div className="flex gap-2">
+                                <label>Variations:</label>
+                                <input
+                                    type="number"
+                                    value={config.variations || defaultVariations}
+                                    onChange={(e) =>
+                                        updateStaticRoomConfig(
+                                            i,
+                                            "variations",
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
+                                    }
+                                    className="border p-1 rounded w-20"
+                                    min="1"
+                                />
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -855,6 +907,20 @@ function DungeonDisplay() {
                                     step="0.01"
                                     min="0"
                                     max="1"
+                                />
+                                <label>Variations:</label>
+                                <input
+                                    type="number"
+                                    value={config.variations || defaultVariations}
+                                    onChange={(e) =>
+                                        updateRoomConfig(
+                                            i,
+                                            "variations",
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
+                                    }
+                                    className="border p-1 rounded w-20"
+                                    min="1"
                                 />
                                 <button
                                     onClick={() => removeRoomConfig(i)}
@@ -948,35 +1014,14 @@ function DungeonDisplay() {
                                     Simplified
                                 </button>
                             </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={handleExportJson}
-                                    className="px-2 py-1 bg-green-500 text-white rounded"
-                                >
-                                    Export
-                                </button>
-                                <button
-                                    onClick={copyJsonToClipboard}
-                                    className="px-2 py-1 bg-yellow-500 text-white rounded"
-                                >
-                                    Copy
-                                </button>
-                                <button
-                                    onClick={toggleJsonPopup}
-                                    className="px-2 py-1 bg-red-500 text-white rounded"
-                                >
-                                    Close
-                                </button>
-                            </div>
                         </div>
-                        <h3 className="font-bold mb-2">Dungeon JSON</h3>
-                        <pre className="whitespace-pre-wrap">
-                            {JSON.stringify(
-                                jsonViewMode === "full" ? dungeon : getSimplifiedDungeon(),
-                                null,
-                                2
+                        <div className="mt-4">
+                            {jsonViewMode === "full" ? (
+                                <pre>{JSON.stringify(dungeon, null, 2)}</pre>
+                            ) : (
+                                <pre>{JSON.stringify(getSimplifiedDungeon(), null, 2)}</pre>
                             )}
-                        </pre>
+                        </div>
                     </div>
                 </div>
             )}
@@ -984,7 +1029,4 @@ function DungeonDisplay() {
     );
 }
 
-// Only export the dynamic version
-export default dynamic(() => Promise.resolve(DungeonDisplay), {
-    ssr: false,
-});
+export default DungeonDisplay;

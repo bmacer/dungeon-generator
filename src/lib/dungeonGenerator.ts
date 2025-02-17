@@ -21,11 +21,13 @@ export interface RoomConfig {
   weight: number; // Weight for random selection (0-1)
   category?: RoomCategory; // Optional default category
   isSpecial?: boolean; // If true, won't be used in random selection
+  variations?: number; // Number of possible variations for this room type
 }
 
 export interface Room {
   id: string; // UUID for this specific room instance
-  templateId: string; // Changed from type to templateId
+  baseTemplateId: string; // Changed from type to templateId
+  templateId: string; // New field
   x: number;
   y: number;
   depth: number;
@@ -33,6 +35,7 @@ export interface Room {
   isStatic?: boolean;
   category: RoomCategory;
   expnum: number; // New field
+  variation: number; // Which variation of the room to use
 }
 
 export interface DungeonConfig {
@@ -43,6 +46,7 @@ export interface DungeonConfig {
   roomConfigs: RoomConfig[]; // Regular room configurations
   staticRoomConfigs: RoomConfig[]; // Static room configurations
   shortcuts: number;
+  defaultVariations?: number; // Default number of variations for rooms
 }
 
 const GRID_SIZE = 100;
@@ -56,6 +60,7 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "START",
     isSpecial: true,
+    variations: 2,
   },
   {
     id: "EnRouteToDestination",
@@ -63,6 +68,7 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "START",
     isSpecial: true,
+    variations: 2,
   },
   {
     id: "BossRoom",
@@ -70,6 +76,7 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "BOSS",
     isSpecial: true,
+    variations: 2,
   },
   {
     id: "GnellenRoom",
@@ -77,21 +84,25 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "GNELLEN",
     isSpecial: true,
+    variations: 2,
   },
   {
     id: "RoomTemplateA",
     doors: ["N", "S", "E", "W"],
     weight: 0.33,
+    variations: 2,
   },
   {
     id: "RoomTemplateB",
     doors: ["N", "S", "E", "W"],
     weight: 0.34,
+    variations: 2,
   },
   {
     id: "RoomTemplateC",
     doors: ["E", "W"],
     weight: 0.33,
+    variations: 2,
   },
 ];
 
@@ -103,6 +114,7 @@ const STATIC_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "STATIC",
     isSpecial: true,
+    variations: 2,
   },
   {
     id: "StaticRoomTemplateY",
@@ -110,6 +122,7 @@ const STATIC_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "STATIC",
     isSpecial: true,
+    variations: 2,
   },
   {
     id: "StaticRoomTemplateZ",
@@ -117,6 +130,7 @@ const STATIC_ROOM_CONFIGS: RoomConfig[] = [
     weight: 0,
     category: "STATIC",
     isSpecial: true,
+    variations: 2,
   },
 ];
 
@@ -128,6 +142,7 @@ export class DungeonGenerator {
   private currentDepth = 0;
   private roomConfigs: Map<string, RoomConfig>;
   private normalizedWeights: { id: string; weight: number }[];
+  private showJsonPopup = false;
 
   constructor(private config: DungeonConfig) {
     // Merge default configs with custom configs
@@ -159,11 +174,11 @@ export class DungeonGenerator {
 
     // Create combined map for all room configs
     this.roomConfigs = new Map([
-      ...mergedStaticConfigs.map((config): [string, RoomConfig] => [
+      ...mergedConfigs.map((config): [string, RoomConfig] => [
         config.id,
         config,
       ]),
-      ...mergedConfigs.map((config): [string, RoomConfig] => [
+      ...mergedStaticConfigs.map((config): [string, RoomConfig] => [
         config.id,
         config,
       ]),
@@ -306,12 +321,32 @@ export class DungeonGenerator {
     doorDirections: Door[],
     parentRoom?: Room
   ): Room {
+    // Get the room config to check for room-specific variations
+    const roomConfig = this.roomConfigs.get(type);
+
+    // Skip variations for special rooms
+    const skipVariations = ["START", "GNELLEN", "BOSS", "STATIC"].includes(
+      category
+    );
+    const variations = skipVariations
+      ? 1
+      : roomConfig?.variations || this.config.defaultVariations || 2;
+
+    const variation = Math.floor(Math.random() * variations);
+    const depth = this.calculateDepthFromIndex(index, category, parentRoom);
+
+    // Determine templateId based on category and room type
+    const templateId = skipVariations
+      ? type
+      : `${type}-Variation${variation + 1}-Depth${depth}`;
+
     return {
       id: this.generateUUID(),
-      templateId: type,
+      baseTemplateId: type,
+      templateId, // New field
       x,
       y,
-      depth: this.calculateDepthFromIndex(index, category, parentRoom),
+      depth,
       category,
       expnum: this.config.expnum,
       doors: doorDirections.map((dir) => ({
@@ -319,6 +354,7 @@ export class DungeonGenerator {
         destinationRoomId: "",
         destinationDoor: "N",
       })),
+      variation,
     };
   }
 
@@ -875,4 +911,8 @@ export class DungeonGenerator {
 
     return -1; // No path found
   }
+
+  toggleJsonPopup = () => {
+    this.showJsonPopup = !this.showJsonPopup;
+  };
 }
