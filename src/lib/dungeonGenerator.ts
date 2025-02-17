@@ -278,26 +278,46 @@ export class DungeonGenerator {
     );
   }
 
+  private calculateDepthFromIndex(
+    index: number,
+    category: RoomCategory,
+    parentRoom?: Room
+  ): number {
+    if (category === "OFFSHOOT" && parentRoom) {
+      return parentRoom.depth;
+    }
+    if (category === "STATIC") {
+      // Find position of this static room in the static rooms array
+      const staticRoomIndex = this.config.staticRooms.findIndex(
+        (room) => room.index === index
+      );
+      return staticRoomIndex + 1; // Depth starts at 1
+    }
+    // For regular path rooms, count static rooms before this index
+    return this.config.staticRooms.filter((room) => room.index < index).length;
+  }
+
   private createRoom(
     type: string,
     x: number,
     y: number,
-    depth: number,
+    index: number,
     category: RoomCategory,
-    doorDirections: Door[]
+    doorDirections: Door[],
+    parentRoom?: Room
   ): Room {
     return {
       id: this.generateUUID(),
       templateId: type,
       x,
       y,
-      depth,
+      depth: this.calculateDepthFromIndex(index, category, parentRoom),
       category,
-      expnum: this.config.expnum, // Add expnum when creating a room
+      expnum: this.config.expnum,
       doors: doorDirections.map((dir) => ({
         direction: dir,
-        destinationRoomId: "", // Will be set when connecting rooms
-        destinationDoor: "N", // Will be set when connecting rooms
+        destinationRoomId: "",
+        destinationDoor: "N",
       })),
     };
   }
@@ -361,7 +381,7 @@ export class DungeonGenerator {
       "StartingRoom",
       CENTER,
       CENTER,
-      0, // Start room is always depth 0
+      0, // Index 0 for start room
       "START",
       this.determineRoomDoors("StartingRoom")
     );
@@ -371,9 +391,10 @@ export class DungeonGenerator {
       "EnRouteToDestination",
       -1,
       -1,
-      0,
+      1, // Index 1 for enroute room
       "START",
-      this.determineRoomDoors("EnRouteToDestination")
+      this.determineRoomDoors("EnRouteToDestination"),
+      startRoom
     );
 
     // Create Gnellen room
@@ -381,9 +402,10 @@ export class DungeonGenerator {
       "GnellenRoom",
       CENTER,
       CENTER - 1,
-      0, // Gnellen room is always depth 0
+      2, // Index 2 for Gnellen room
       "GNELLEN",
-      this.determineRoomDoors("GnellenRoom")
+      this.determineRoomDoors("GnellenRoom"),
+      startRoom
     );
 
     this.placeRoom(startRoom);
@@ -394,7 +416,7 @@ export class DungeonGenerator {
 
     let currentRoom = startRoom;
     let remainingRooms = this.config.totalRooms - 1;
-    let currentIndex = 1; // Start at 1 since we've placed start room
+    let currentIndex = 3; // Start at 3 since we've placed three rooms
 
     // Keep track of attempts to place rooms
     let attempts = 0;
@@ -462,9 +484,10 @@ export class DungeonGenerator {
         roomType,
         newX,
         newY,
-        this.currentDepth,
+        currentIndex,
         category,
-        doorDirections
+        doorDirections,
+        currentRoom
       );
 
       this.placeRoom(newRoom);
@@ -519,9 +542,10 @@ export class DungeonGenerator {
           "BossRoom",
           newX,
           newY,
-          this.currentDepth,
+          this.rooms.length, // Use rooms.length as the index for boss room
           "BOSS",
-          doorDirections
+          doorDirections,
+          parentRoom
         );
 
         this.placeRoom(bossRoom);
@@ -610,9 +634,10 @@ export class DungeonGenerator {
             roomType,
             newX,
             newY,
-            parentRoom.depth,
+            this.rooms.length, // Use rooms.length as the index for offshoot rooms
             "OFFSHOOT",
-            doorDirections
+            doorDirections,
+            parentRoom
           );
 
           this.placeRoom(newRoom);
@@ -633,9 +658,7 @@ export class DungeonGenerator {
   }
 
   private placeStaticRooms(): boolean {
-    let staticRoomsPlaced = 0;
     for (const staticRoom of this.config.staticRooms) {
-      staticRoomsPlaced++;
       if (staticRoom.index < this.rooms.length) {
         const oldRoom = this.rooms[staticRoom.index];
         const doorDirections = this.determineRoomDoors(staticRoom.type);
@@ -660,9 +683,10 @@ export class DungeonGenerator {
           staticRoom.type,
           oldRoom.x,
           oldRoom.y,
-          staticRoomsPlaced,
+          staticRoom.index,
           "STATIC",
-          doorDirections
+          doorDirections,
+          oldRoom
         );
 
         // Copy over only the valid connections

@@ -53,6 +53,37 @@ const defaultRoomConfigs: RoomConfig[] = [
     },
 ];
 
+const defaultStaticRoomConfigs: RoomConfig[] = [
+    {
+        id: "StaticRoomTemplateX",
+        doors: ["N", "S"],
+        weight: 0,
+        category: "STATIC",
+        isSpecial: true,
+    },
+    {
+        id: "StaticRoomTemplateY",
+        doors: ["N", "S", "E", "W"],
+        weight: 0,
+        category: "STATIC",
+        isSpecial: true,
+    },
+    {
+        id: "StaticRoomTemplateZ",
+        doors: ["E", "W"],
+        weight: 0,
+        category: "STATIC",
+        isSpecial: true,
+    },
+];
+
+const defaultStaticRooms = [
+    { index: 5, type: "StaticRoomTemplateX" },
+    { index: 9, type: "StaticRoomTemplateY" },
+];
+
+const defaultOffshoots = [{ count: 1, depth: 1 }];
+
 // Add type for room config update value
 type RoomConfigUpdateValue = string | number | Door;
 
@@ -60,15 +91,125 @@ function DungeonDisplay() {
     const [dungeon, setDungeon] = useState<Room[]>([]);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Configuration state
-    const [totalRooms, setTotalRooms] = useState(5);
-    const [offshoots, setOffshoots] = useState([{ count: 1, depth: 1 }]);
-    const [staticRooms, setStaticRooms] = useState<
-        { index: number; type: RoomConfig["id"] }[]
-    >([{ index: 5, type: "StaticRoomTemplateX" }]);
-    const [roomConfigs, setRoomConfigs] =
-        useState<RoomConfig[]>(defaultRoomConfigs);
-    const [shortcuts, setShortcuts] = useState(2);
+    // Configuration state with localStorage persistence
+    const [totalRooms, setTotalRooms] = useState(() => {
+        const saved = localStorage.getItem("totalRooms");
+        return saved ? parseInt(saved) : 12;
+    });
+    const [offshoots, setOffshoots] = useState(() => {
+        const saved = localStorage.getItem("offshoots");
+        return saved ? JSON.parse(saved) : defaultOffshoots;
+    });
+    const [staticRooms, setStaticRooms] = useState(() => {
+        const saved = localStorage.getItem("staticRooms");
+        return saved ? JSON.parse(saved) : defaultStaticRooms;
+    });
+    const [roomConfigs, setRoomConfigs] = useState(() => {
+        const saved = localStorage.getItem("roomConfigs");
+        return saved ? JSON.parse(saved) : defaultRoomConfigs;
+    });
+    const [shortcuts, setShortcuts] = useState(() => {
+        const saved = localStorage.getItem("shortcuts");
+        return saved ? parseInt(saved) : 2;
+    });
+    const [staticRoomConfigs, setStaticRoomConfigs] = useState(() => {
+        const saved = localStorage.getItem("staticRoomConfigs");
+        return saved ? JSON.parse(saved) : defaultStaticRoomConfigs;
+    });
+    const [expnum, setExpnum] = useState(() => {
+        const saved = localStorage.getItem("expnum");
+        return saved ? parseInt(saved) : 101;
+    });
+
+    const generateDungeon = useCallback(() => {
+        const generator = new DungeonGenerator({
+            expnum,
+            totalRooms,
+            offshoots,
+            staticRooms,
+            roomConfigs,
+            staticRoomConfigs,
+            shortcuts,
+        });
+        const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
+            generator.generate();
+        setDungeon(generatedRooms);
+        setFastestPathSteps(newFastestPathSteps);
+    }, [
+        expnum,
+        totalRooms,
+        offshoots,
+        staticRooms,
+        roomConfigs,
+        staticRoomConfigs,
+        shortcuts,
+    ]);
+
+    const centerView = useCallback(() => {
+        if (containerRef.current) {
+            const centerX = (GRID_SIZE * CELL_SIZE) / 2;
+            const centerY = (GRID_SIZE * CELL_SIZE) / 2;
+            const containerWidth = containerRef.current.clientWidth;
+            const containerHeight = containerRef.current.clientHeight;
+
+            containerRef.current.scrollTo({
+                left: centerX - containerWidth / 2,
+                top: centerY - containerHeight / 2,
+                behavior: "smooth",
+            });
+        }
+    }, []);
+
+    // Save to localStorage when values change
+    useEffect(() => {
+        localStorage.setItem("totalRooms", totalRooms.toString());
+    }, [totalRooms]);
+
+    useEffect(() => {
+        localStorage.setItem("offshoots", JSON.stringify(offshoots));
+    }, [offshoots]);
+
+    useEffect(() => {
+        localStorage.setItem("staticRooms", JSON.stringify(staticRooms));
+    }, [staticRooms]);
+
+    useEffect(() => {
+        localStorage.setItem("roomConfigs", JSON.stringify(roomConfigs));
+    }, [roomConfigs]);
+
+    useEffect(() => {
+        localStorage.setItem("shortcuts", shortcuts.toString());
+    }, [shortcuts]);
+
+    useEffect(() => {
+        localStorage.setItem(
+            "staticRoomConfigs",
+            JSON.stringify(staticRoomConfigs)
+        );
+    }, [staticRoomConfigs]);
+
+    useEffect(() => {
+        localStorage.setItem("expnum", expnum.toString());
+    }, [expnum]);
+
+    const clearMemory = useCallback(() => {
+        localStorage.removeItem("totalRooms");
+        localStorage.removeItem("offshoots");
+        localStorage.removeItem("staticRooms");
+        localStorage.removeItem("roomConfigs");
+        localStorage.removeItem("shortcuts");
+        localStorage.removeItem("staticRoomConfigs");
+        localStorage.removeItem("expnum");
+
+        setTotalRooms(12);
+        setOffshoots(defaultOffshoots);
+        setStaticRooms(defaultStaticRooms);
+        setRoomConfigs(defaultRoomConfigs);
+        setShortcuts(2);
+        setStaticRoomConfigs(defaultStaticRoomConfigs);
+        setExpnum(101);
+    }, []);
+
     const [zoomLevel, setZoomLevel] = useState(1);
 
     const [isDragging, setIsDragging] = useState(false);
@@ -88,38 +229,15 @@ function DungeonDisplay() {
         "full"
     );
 
-    // Add new state for static room configs
-    const [staticRoomConfigs, setStaticRoomConfigs] = useState<RoomConfig[]>([
-        {
-            id: "StaticRoomTemplateX",
-            doors: ["N", "S"],
-            weight: 0,
-            category: "STATIC",
-            isSpecial: true,
-        },
-        {
-            id: "StaticRoomTemplateY",
-            doors: ["N", "S", "E", "W"],
-            weight: 0,
-            category: "STATIC",
-            isSpecial: true,
-        },
-        {
-            id: "StaticRoomTemplateZ",
-            doors: ["E", "W"],
-            weight: 0,
-            category: "STATIC",
-            isSpecial: true,
-        },
-    ]);
-
-    const [expnum, setExpnum] = useState(101); // Default to 101
+    const [showToast, setShowToast] = useState(false);
 
     // Add useEffect to handle window-dependent calculations
     useEffect(() => {
         setContainerWidth(Math.min(800, window.innerWidth - 32));
         setContainerHeight(Math.min(800, window.innerHeight - 200));
-    }, []);
+        generateDungeon(); // Generate once on initial load
+        centerView();
+    }, [generateDungeon, centerView]);
 
     const addRoomConfig = () => {
         setRoomConfigs([
@@ -155,47 +273,10 @@ function DungeonDisplay() {
     };
 
     const removeRoomConfig = (index: number) => {
-        setRoomConfigs(roomConfigs.filter((_, i) => i !== index));
+        setRoomConfigs(
+            roomConfigs.filter((_: RoomConfig, i: number) => i !== index)
+        );
     };
-
-    const generateDungeon = useCallback(() => {
-        const generator = new DungeonGenerator({
-            expnum, // Add expnum to the config
-            totalRooms,
-            offshoots,
-            staticRooms,
-            roomConfigs,
-            staticRoomConfigs,
-            shortcuts,
-        });
-        const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
-            generator.generate();
-        setDungeon(generatedRooms);
-        setFastestPathSteps(newFastestPathSteps);
-    }, [
-        expnum, // Add to dependencies
-        totalRooms,
-        offshoots,
-        staticRooms,
-        roomConfigs,
-        staticRoomConfigs,
-        shortcuts,
-    ]);
-
-    const centerView = useCallback(() => {
-        if (containerRef.current) {
-            const centerX = (GRID_SIZE * CELL_SIZE) / 2;
-            const centerY = (GRID_SIZE * CELL_SIZE) / 2;
-            const containerWidth = containerRef.current.clientWidth;
-            const containerHeight = containerRef.current.clientHeight;
-
-            containerRef.current.scrollTo({
-                left: centerX - containerWidth / 2,
-                top: centerY - containerHeight / 2,
-                behavior: "smooth",
-            });
-        }
-    }, []);
 
     const addOffshoot = () => {
         setOffshoots([...offshoots, { count: 1, depth: 1 }]);
@@ -212,7 +293,11 @@ function DungeonDisplay() {
     };
 
     const removeOffshoot = (index: number) => {
-        setOffshoots(offshoots.filter((_, i) => i !== index));
+        setOffshoots(
+            offshoots.filter(
+                (_: { count: number; depth: number }, i: number) => i !== index
+            )
+        );
     };
 
     const addStaticRoom = () => {
@@ -229,7 +314,7 @@ function DungeonDisplay() {
     ) => {
         const newStaticRooms = [...staticRooms];
         if (field === "type") {
-            if (staticRoomConfigs.some((config) => config.id === value)) {
+            if (staticRoomConfigs.some((config: RoomConfig) => config.id === value)) {
                 newStaticRooms[index] = {
                     ...newStaticRooms[index],
                     [field]: value as string,
@@ -245,7 +330,11 @@ function DungeonDisplay() {
     };
 
     const removeStaticRoom = (index: number) => {
-        setStaticRooms(staticRooms.filter((_, i) => i !== index));
+        setStaticRooms(
+            staticRooms.filter(
+                (_: { index: number; type: string }, i: number) => i !== index
+            )
+        );
     };
 
     const renderCoordinates = () => {
@@ -358,18 +447,17 @@ function DungeonDisplay() {
         URL.revokeObjectURL(url);
     };
 
+    const copyJsonToClipboard = () => {
+        const simplifiedJson = JSON.stringify(getSimplifiedDungeon(), null, 2);
+        navigator.clipboard.writeText(simplifiedJson);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+    };
+
     // Function to toggle JSON popup visibility
     const toggleJsonPopup = () => {
         setShowJsonPopup((prev) => !prev);
     };
-
-    useEffect(() => {
-        const initDungeon = () => {
-            generateDungeon();
-            centerView();
-        };
-        initDungeon();
-    }, [generateDungeon, centerView]); // Empty dependency array since this should only run once on mount
 
     // Add functions to manage static room configs
     const addStaticRoomConfig = () => {
@@ -409,287 +497,13 @@ function DungeonDisplay() {
     };
 
     const removeStaticRoomConfig = (index: number) => {
-        setStaticRoomConfigs(staticRoomConfigs.filter((_, i) => i !== index));
+        setStaticRoomConfigs(
+            staticRoomConfigs.filter((_: RoomConfig, i: number) => i !== index)
+        );
     };
 
     return (
         <div className="p-4 text-black" style={{ overflowX: "hidden" }}>
-            <div className="mb-6 space-y-4">
-                <div className="space-y-2">
-                    <h3 className="font-bold">Basic Configuration</h3>
-                    <div className="flex items-center gap-2">
-                        <label>Expedition Number:</label>
-                        <input
-                            type="number"
-                            value={expnum}
-                            onChange={(e) =>
-                                setExpnum(Math.max(1, parseInt(e.target.value) || 101))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="1"
-                        />
-                        <label>Total Rooms:</label>
-                        <input
-                            type="number"
-                            value={totalRooms}
-                            onChange={(e) =>
-                                setTotalRooms(Math.max(1, parseInt(e.target.value) || 1))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="1"
-                        />
-                        <label className="ml-4">Shortcuts:</label>
-                        <input
-                            type="number"
-                            value={shortcuts}
-                            onChange={(e) =>
-                                setShortcuts(Math.max(0, parseInt(e.target.value) || 0))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="0"
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-2 ">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Offshoots</h3>
-                        <button
-                            onClick={addOffshoot}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Offshoot
-                        </button>
-                    </div>
-                    {offshoots.map((offshoot, i) => (
-                        <div
-                            key={i}
-                            className="flex items-center gap-2 bg-gray-50 p-2 rounded"
-                        >
-                            <label>Count:</label>
-                            <input
-                                type="number"
-                                value={offshoot.count}
-                                onChange={(e) =>
-                                    updateOffshoot(
-                                        i,
-                                        "count",
-                                        Math.max(1, parseInt(e.target.value) || 1)
-                                    )
-                                }
-                                className="border p-1 rounded w-16"
-                                min="1"
-                            />
-                            <label>Depth:</label>
-                            <input
-                                type="number"
-                                value={offshoot.depth}
-                                onChange={(e) =>
-                                    updateOffshoot(
-                                        i,
-                                        "depth",
-                                        Math.max(1, parseInt(e.target.value) || 1)
-                                    )
-                                }
-                                className="border p-1 rounded w-16"
-                                min="1"
-                            />
-                            <button
-                                onClick={() => removeOffshoot(i)}
-                                className="px-2 py-1 bg-red-500 text-white rounded text-sm"
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Static Rooms</h3>
-                        <button
-                            onClick={addStaticRoom}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Static Room
-                        </button>
-                    </div>
-                    {staticRooms.map((room, i) => (
-                        <div
-                            key={i}
-                            className="flex items-center gap-2 bg-gray-50 p-2 rounded"
-                        >
-                            <label>Index:</label>
-                            <input
-                                type="number"
-                                value={room.index}
-                                onChange={(e) =>
-                                    updateStaticRoom(
-                                        i,
-                                        "index",
-                                        Math.max(0, parseInt(e.target.value) || 0)
-                                    )
-                                }
-                                className="border p-1 rounded w-16"
-                                min="0"
-                            />
-                            <label>Type:</label>
-                            <select
-                                value={room.type}
-                                onChange={(e) => updateStaticRoom(i, "type", e.target.value)}
-                                className="border p-1 rounded"
-                            >
-                                {staticRoomConfigs.map((config) => (
-                                    <option key={config.id} value={config.id}>
-                                        {config.id}
-                                    </option>
-                                ))}
-                            </select>
-                            <button
-                                onClick={() => removeStaticRoom(i)}
-                                className="px-2 py-1 bg-red-500 text-white rounded text-sm"
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Static Room Types</h3>
-                        <button
-                            onClick={addStaticRoomConfig}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Static Room Type
-                        </button>
-                    </div>
-                    {staticRoomConfigs.map((config, i) => (
-                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
-                            <div className="flex items-center gap-2">
-                                <label>ID:</label>
-                                <input
-                                    type="text"
-                                    value={config.id}
-                                    onChange={(e) =>
-                                        updateStaticRoomConfig(i, "id", e.target.value)
-                                    }
-                                    className="border p-1 rounded w-64"
-                                />
-                                <button
-                                    onClick={() => removeStaticRoomConfig(i)}
-                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                            <div className="flex gap-2">
-                                <label>Doors:</label>
-                                {(["N", "S", "E", "W"] as const).map((door) => (
-                                    <label key={door} className="flex items-center gap-1">
-                                        <input
-                                            type="checkbox"
-                                            checked={config.doors.includes(door)}
-                                            onChange={() => updateStaticRoomConfig(i, "doors", door)}
-                                        />
-                                        {door}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Room Types</h3>
-                        <button
-                            onClick={addRoomConfig}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Room Type
-                        </button>
-                    </div>
-                    {roomConfigs.map((config, i) => (
-                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
-                            <div className="flex items-center gap-2">
-                                <label>ID:</label>
-                                <input
-                                    type="text"
-                                    value={config.id}
-                                    onChange={(e) => updateRoomConfig(i, "id", e.target.value)}
-                                    className="border p-1 rounded w-64"
-                                />
-                                <label>Weight:</label>
-                                <input
-                                    type="number"
-                                    value={config.weight}
-                                    onChange={(e) =>
-                                        updateRoomConfig(
-                                            i,
-                                            "weight",
-                                            parseFloat(e.target.value) || 0
-                                        )
-                                    }
-                                    className="border p-1 rounded w-20"
-                                    step="0.01"
-                                    min="0"
-                                    max="1"
-                                />
-                                <button
-                                    onClick={() => removeRoomConfig(i)}
-                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                            <div className="flex gap-2">
-                                <label>Doors:</label>
-                                {(["N", "S", "E", "W"] as const).map((door) => (
-                                    <label key={door} className="flex items-center gap-1">
-                                        <input
-                                            type="checkbox"
-                                            checked={config.doors.includes(door)}
-                                            onChange={() => updateRoomConfig(i, "doors", door)}
-                                        />
-                                        {door}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
-                <button
-                    onClick={centerView}
-                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                >
-                    Center View
-                </button>
-                <button
-                    onClick={generateDungeon}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                    Generate Dungeon
-                </button>
-                <button
-                    onClick={toggleJsonPopup}
-                    className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-                >
-                    Show JSON
-                </button>
-            </div>
-
-            {fastestPathSteps !== null && (
-                <div className="mt-4">
-                    <h4 className="font-bold">Fastest Path Steps:</h4>
-                    <p>{fastestPathSteps === -1 ? "No path found." : fastestPathSteps}</p>
-                </div>
-            )}
-
             <div className="zoom-controls">
                 <button onClick={zoomIn}>Zoom In</button>
                 <button onClick={zoomOut}>Zoom Out</button>
@@ -697,7 +511,7 @@ function DungeonDisplay() {
 
             <div
                 ref={containerRef}
-                className="border border-gray-300 overflow-auto relative"
+                className="border border-gray-300 overflow-auto relative mb-8"
                 style={{
                     width: containerWidth,
                     height: containerHeight,
@@ -801,7 +615,305 @@ function DungeonDisplay() {
                 </div>
             </div>
 
+            {fastestPathSteps !== null && (
+                <div className="mb-4">
+                    <h4 className="font-bold">Fastest Path Steps:</h4>
+                    <p>{fastestPathSteps === -1 ? "No path found." : fastestPathSteps}</p>
+                </div>
+            )}
+
             {renderLegend()}
+
+            <div className="mb-6 space-y-4">
+                <div className="space-y-2">
+                    <h3 className="font-bold">Basic Configuration</h3>
+                    <div className="flex items-center gap-2">
+                        <label>Expedition Number:</label>
+                        <input
+                            type="number"
+                            value={expnum}
+                            onChange={(e) =>
+                                setExpnum(Math.max(1, parseInt(e.target.value) || 101))
+                            }
+                            className="border p-1 rounded w-20"
+                            min="1"
+                        />
+                        <label>Total Rooms:</label>
+                        <input
+                            type="number"
+                            value={totalRooms}
+                            onChange={(e) =>
+                                setTotalRooms(Math.max(1, parseInt(e.target.value) || 1))
+                            }
+                            className="border p-1 rounded w-20"
+                            min="1"
+                        />
+                        <label className="ml-4">Shortcuts:</label>
+                        <input
+                            type="number"
+                            value={shortcuts}
+                            onChange={(e) =>
+                                setShortcuts(Math.max(0, parseInt(e.target.value) || 0))
+                            }
+                            className="border p-1 rounded w-20"
+                            min="0"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-2 ">
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-bold">Offshoots</h3>
+                        <button
+                            onClick={addOffshoot}
+                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                        >
+                            Add Offshoot
+                        </button>
+                    </div>
+                    {offshoots.map(
+                        (offshoot: { count: number; depth: number }, i: number) => (
+                            <div
+                                key={i}
+                                className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                            >
+                                <label>Count:</label>
+                                <input
+                                    type="number"
+                                    value={offshoot.count}
+                                    onChange={(e) =>
+                                        updateOffshoot(
+                                            i,
+                                            "count",
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
+                                    }
+                                    className="border p-1 rounded w-16"
+                                    min="1"
+                                />
+                                <label>Depth:</label>
+                                <input
+                                    type="number"
+                                    value={offshoot.depth}
+                                    onChange={(e) =>
+                                        updateOffshoot(
+                                            i,
+                                            "depth",
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
+                                    }
+                                    className="border p-1 rounded w-16"
+                                    min="1"
+                                />
+                                <button
+                                    onClick={() => removeOffshoot(i)}
+                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        )
+                    )}
+                </div>
+
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-bold">Static Rooms</h3>
+                        <button
+                            onClick={addStaticRoom}
+                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                        >
+                            Add Static Room
+                        </button>
+                    </div>
+                    {staticRooms.map(
+                        (room: { index: number; type: string }, i: number) => (
+                            <div
+                                key={i}
+                                className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                            >
+                                <label>Index:</label>
+                                <input
+                                    type="number"
+                                    value={room.index}
+                                    onChange={(e) =>
+                                        updateStaticRoom(
+                                            i,
+                                            "index",
+                                            Math.max(0, parseInt(e.target.value) || 0)
+                                        )
+                                    }
+                                    className="border p-1 rounded w-16"
+                                    min="0"
+                                />
+                                <label>Type:</label>
+                                <select
+                                    value={room.type}
+                                    onChange={(e) => updateStaticRoom(i, "type", e.target.value)}
+                                    className="border p-1 rounded"
+                                >
+                                    {staticRoomConfigs.map((config: RoomConfig) => (
+                                        <option key={config.id} value={config.id}>
+                                            {config.id}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={() => removeStaticRoom(i)}
+                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        )
+                    )}
+                </div>
+
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-bold">Static Room Types</h3>
+                        <button
+                            onClick={addStaticRoomConfig}
+                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                        >
+                            Add Static Room Type
+                        </button>
+                    </div>
+                    {staticRoomConfigs.map((config: RoomConfig, i: number) => (
+                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
+                            <div className="flex items-center gap-2">
+                                <label>ID:</label>
+                                <input
+                                    type="text"
+                                    value={config.id}
+                                    onChange={(e) =>
+                                        updateStaticRoomConfig(i, "id", e.target.value)
+                                    }
+                                    className="border p-1 rounded w-64"
+                                />
+                                <button
+                                    onClick={() => removeStaticRoomConfig(i)}
+                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <label>Doors:</label>
+                                {(["N", "S", "E", "W"] as const).map((door) => (
+                                    <label key={door} className="flex items-center gap-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={config.doors.includes(door)}
+                                            onChange={() => updateStaticRoomConfig(i, "doors", door)}
+                                        />
+                                        {door}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <h3 className="font-bold">Room Types</h3>
+                        <button
+                            onClick={addRoomConfig}
+                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                        >
+                            Add Room Type
+                        </button>
+                    </div>
+                    {roomConfigs.map((config: RoomConfig, i: number) => (
+                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
+                            <div className="flex items-center gap-2">
+                                <label>ID:</label>
+                                <input
+                                    type="text"
+                                    value={config.id}
+                                    onChange={(e) => updateRoomConfig(i, "id", e.target.value)}
+                                    className="border p-1 rounded w-64"
+                                />
+                                <label>Weight:</label>
+                                <input
+                                    type="number"
+                                    value={config.weight}
+                                    onChange={(e) =>
+                                        updateRoomConfig(
+                                            i,
+                                            "weight",
+                                            parseFloat(e.target.value) || 0
+                                        )
+                                    }
+                                    className="border p-1 rounded w-20"
+                                    step="0.01"
+                                    min="0"
+                                    max="1"
+                                />
+                                <button
+                                    onClick={() => removeRoomConfig(i)}
+                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <label>Doors:</label>
+                                {(["N", "S", "E", "W"] as const).map((door) => (
+                                    <label key={door} className="flex items-center gap-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={config.doors.includes(door)}
+                                            onChange={() => updateRoomConfig(i, "doors", door)}
+                                        />
+                                        {door}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
+                <button
+                    onClick={centerView}
+                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                    Center View
+                </button>
+                <button
+                    onClick={generateDungeon}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                    Regenerate
+                </button>
+                <button
+                    onClick={copyJsonToClipboard}
+                    className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                >
+                    Copy JSON
+                </button>
+                <button
+                    onClick={toggleJsonPopup}
+                    className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                >
+                    Show JSON
+                </button>
+                <button
+                    onClick={clearMemory}
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                    Clear Memory
+                </button>
+            </div>
+
+            {showToast && (
+                <div className="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 animate-fade-in-out">
+                    Simplified JSON Copied
+                </div>
+            )}
 
             {/* JSON Popup */}
             {showJsonPopup && (
@@ -837,6 +949,12 @@ function DungeonDisplay() {
                                     className="px-2 py-1 bg-green-500 text-white rounded"
                                 >
                                     Export
+                                </button>
+                                <button
+                                    onClick={copyJsonToClipboard}
+                                    className="px-2 py-1 bg-yellow-500 text-white rounded"
+                                >
+                                    Copy
                                 </button>
                                 <button
                                     onClick={toggleJsonPopup}
