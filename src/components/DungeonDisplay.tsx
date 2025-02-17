@@ -168,11 +168,8 @@ function DungeonDisplay() {
             staticRoomConfigs,
             shortcuts,
         });
-        const {
-            rooms: generatedRooms,
-            fastestPathSteps: newFastestPathSteps,
-            expnum: generatedExpnum,
-        } = generator.generate();
+        const { rooms: generatedRooms, fastestPathSteps: newFastestPathSteps } =
+            generator.generate();
         setDungeon(generatedRooms);
         setFastestPathSteps(newFastestPathSteps);
     }, [
@@ -333,11 +330,18 @@ function DungeonDisplay() {
         }
     };
 
-    // Add function to simplify JSON
+    // Update function to simplify JSON
     const getSimplifiedDungeon = useCallback(() => {
-        return dungeon.map(({ x, y, category, ...room }) => ({
-            ...room,
-            doors: room.doors.map(({ destinationDoor, ...doorInfo }) => doorInfo),
+        return dungeon.map(({ doors, id, templateId, depth, expnum }) => ({
+            id,
+            templateId,
+            depth,
+            expnum,
+            doors: doors.map(({ direction, destinationRoomId, isShortcut }) => ({
+                direction,
+                destinationRoomId,
+                isShortcut,
+            })),
         }));
     }, [dungeon]);
 
@@ -811,8 +815,8 @@ function DungeonDisplay() {
                                 <button
                                     onClick={() => setJsonViewMode("full")}
                                     className={`px-2 py-1 rounded ${jsonViewMode === "full"
-                                        ? "bg-blue-500 text-white"
-                                        : "bg-gray-200"
+                                            ? "bg-blue-500 text-white"
+                                            : "bg-gray-200"
                                         }`}
                                 >
                                     Full
@@ -820,8 +824,8 @@ function DungeonDisplay() {
                                 <button
                                     onClick={() => setJsonViewMode("simplified")}
                                     className={`px-2 py-1 rounded ${jsonViewMode === "simplified"
-                                        ? "bg-blue-500 text-white"
-                                        : "bg-gray-200"
+                                            ? "bg-blue-500 text-white"
+                                            : "bg-gray-200"
                                         }`}
                                 >
                                     Simplified

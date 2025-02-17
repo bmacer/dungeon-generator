@@ -159,8 +159,14 @@ export class DungeonGenerator {
 
     // Create combined map for all room configs
     this.roomConfigs = new Map([
-      ...mergedStaticConfigs.map((config) => [config.id, config]),
-      ...mergedConfigs.map((config) => [config.id, config]),
+      ...mergedStaticConfigs.map((config): [string, RoomConfig] => [
+        config.id,
+        config,
+      ]),
+      ...mergedConfigs.map((config): [string, RoomConfig] => [
+        config.id,
+        config,
+      ]),
     ]);
 
     // Calculate normalized weights for random selection (excluding special rooms)
