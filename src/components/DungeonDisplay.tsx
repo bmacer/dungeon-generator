@@ -66,7 +66,7 @@ const defaultRoomConfigs: RoomConfig[] = [
 const defaultStaticRoomConfigs: RoomConfig[] = [
     {
         id: "StaticRoomTemplateX",
-        doors: ["N", "S"],
+        doors: ["N", "E"],
         weight: 0,
         category: "STATIC",
         isSpecial: true,
@@ -88,11 +88,11 @@ const defaultStaticRoomConfigs: RoomConfig[] = [
 ];
 
 const defaultStaticRooms = [
-    { index: 5, type: "StaticRoomTemplateX" },
-    { index: 9, type: "StaticRoomTemplateY" },
+    { index: 12, type: "StaticRoomTemplateX" },
+    // { index: 9, type: "StaticRoomTemplateY" },
 ];
 
-const defaultOffshoots = [{ count: 1, depth: 1 }];
+const defaultOffshoots = [{ count: 2, depth: 3 }];
 
 // Add type for room config update value
 type RoomConfigUpdateValue = string | number | Door;
@@ -104,7 +104,7 @@ function DungeonDisplay() {
     // Configuration state with localStorage persistence
     const [totalRooms, setTotalRooms] = useState(() => {
         const saved = localStorage.getItem("totalRooms");
-        return saved ? parseInt(saved) : 12;
+        return saved ? parseInt(saved) : 25;
     });
     const [offshoots, setOffshoots] = useState(() => {
         const saved = localStorage.getItem("offshoots");
@@ -223,7 +223,7 @@ function DungeonDisplay() {
         localStorage.removeItem("expnum");
         localStorage.removeItem("defaultVariations");
 
-        setTotalRooms(12);
+        setTotalRooms(25);
         setOffshoots(defaultOffshoots);
         setStaticRooms(defaultStaticRooms);
         setRoomConfigs(defaultRoomConfigs);
@@ -998,8 +998,8 @@ function DungeonDisplay() {
                                 <button
                                     onClick={() => setJsonViewMode("full")}
                                     className={`px-2 py-1 rounded ${jsonViewMode === "full"
-                                            ? "bg-blue-500 text-white"
-                                            : "bg-gray-200"
+                                        ? "bg-blue-500 text-white"
+                                        : "bg-gray-200"
                                         }`}
                                 >
                                     Full
@@ -1007,8 +1007,8 @@ function DungeonDisplay() {
                                 <button
                                     onClick={() => setJsonViewMode("simplified")}
                                     className={`px-2 py-1 rounded ${jsonViewMode === "simplified"
-                                            ? "bg-blue-500 text-white"
-                                            : "bg-gray-200"
+                                        ? "bg-blue-500 text-white"
+                                        : "bg-gray-200"
                                         }`}
                                 >
                                     Simplified

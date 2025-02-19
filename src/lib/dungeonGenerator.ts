@@ -72,7 +72,7 @@ const DEFAULT_ROOM_CONFIGS: RoomConfig[] = [
   },
   {
     id: "BossRoom",
-    doors: ["N", "S", "E", "W"],
+    doors: ["W"],
     weight: 0,
     category: "BOSS",
     isSpecial: true,
@@ -213,15 +213,11 @@ export class DungeonGenerator {
     });
 
     if (compatibleRooms.length === 0) {
-      // If no compatible rooms found, default to RoomTemplateB which has all doors
       return "RoomTemplateB";
     }
 
-    const totalWeight = compatibleRooms.reduce(
-      (sum, { weight }) => sum + weight,
-      0
-    );
-    const rand = Math.random() * totalWeight;
+    // Use a single random number against cumulative weights
+    const rand = Math.random();
     const selected = compatibleRooms.find(({ weight }) => rand <= weight);
     return selected?.id || compatibleRooms[0].id;
   }
@@ -274,10 +270,9 @@ export class DungeonGenerator {
     return directions;
   }
 
-  private getMatchingDoors(direction: Door, roomType: string): Door[] {
+  private getMatchingDoors(direction: Door, roomType: string): Door[] | null {
     const baseDoors = this.determineRoomDoors(roomType);
 
-    // Ensure the new room has a matching door
     const oppositeMap: Record<Door, Door> = {
       N: "S",
       S: "N",
@@ -287,8 +282,22 @@ export class DungeonGenerator {
       O: "I",
     };
 
+    // Special handling for boss room - only allow connection from east
+    if (roomType === "BossRoom" && direction !== "E") {
+      return null; // Signal that this direction isn't valid
+    }
+
     if (!baseDoors.includes(oppositeMap[direction])) {
-      // If the room type doesn't support the required door, change to RoomTemplateB
+      // Don't fall back to RoomTemplateB for special rooms
+      if (
+        roomType === "BossRoom" ||
+        roomType === "StartingRoom" ||
+        roomType === "GnellenRoom" ||
+        roomType === "EnRouteToDestination"
+      ) {
+        return null; // Signal that this direction isn't valid
+      }
+      // Only fall back for regular rooms
       return this.determineRoomDoors("RoomTemplateB");
     }
 
@@ -510,79 +519,15 @@ export class DungeonGenerator {
         continue;
       }
 
-      const direction =
-        directions[Math.floor(Math.random() * directions.length)];
-      let newX = currentRoom.x;
-      let newY = currentRoom.y;
-
-      switch (direction) {
-        case "N":
-          newY--;
-          break;
-        case "S":
-          newY++;
-          break;
-        case "E":
-          newX++;
-          break;
-        case "W":
-          newX--;
-          break;
-      }
-
-      // Update depth if this is a static room
-      if (staticOrder[currentIndex]) {
-        this.currentDepth++;
-      }
-
-      const roomType =
-        remainingRooms === 1 ? "BossRoom" : this.getRandomRoomType(direction);
-      const doorDirections = this.getMatchingDoors(direction, roomType);
-      const config = this.roomConfigs.get(roomType);
-      const category =
-        remainingRooms === 1 ? "BOSS" : config?.category || "REGULAR_PATH";
-
-      const newRoom = this.createRoom(
-        roomType,
-        newX,
-        newY,
-        currentIndex,
-        category,
-        doorDirections,
-        currentRoom
+      // Try each direction until we find one that works
+      let placedRoom = false;
+      const shuffledDirections = [...directions].sort(
+        () => Math.random() - 0.5
       );
 
-      this.placeRoom(newRoom);
-      this.connectRooms(currentRoom, newRoom, direction);
-      currentRoom = newRoom;
-      remainingRooms--;
-      currentIndex++;
-      attempts = 0;
-    }
-
-    // If we didn't place a boss room, force place it
-    if (!this.rooms.some((r) => r.category === "BOSS")) {
-      console.warn("Boss room not placed normally, forcing placement");
-
-      // Find a valid room to branch from
-      const validRooms = this.rooms.filter((r) => {
-        const directions = this.getAvailableDirections(r.x, r.y, r);
-        return directions.length > 0 && r.category !== "BOSS";
-      });
-
-      if (validRooms.length > 0) {
-        const parentRoom =
-          validRooms[Math.floor(Math.random() * validRooms.length)];
-        const directions = this.getAvailableDirections(
-          parentRoom.x,
-          parentRoom.y,
-          parentRoom
-        );
-        const direction =
-          directions[Math.floor(Math.random() * directions.length)];
-
-        let newX = parentRoom.x;
-        let newY = parentRoom.y;
+      for (const direction of shuffledDirections) {
+        let newX = currentRoom.x;
+        let newY = currentRoom.y;
 
         switch (direction) {
           case "N":
@@ -599,19 +544,74 @@ export class DungeonGenerator {
             break;
         }
 
-        const doorDirections = this.getMatchingDoors(direction, "BossRoom");
+        const roomType =
+          remainingRooms === 1 ? "BossRoom" : this.getRandomRoomType(direction);
+        const doorDirections = this.getMatchingDoors(direction, roomType);
+
+        // Skip this direction if doors don't match
+        if (doorDirections === null) {
+          continue;
+        }
+
+        const config = this.roomConfigs.get(roomType);
+        const category =
+          remainingRooms === 1 ? "BOSS" : config?.category || "REGULAR_PATH";
+
+        const newRoom = this.createRoom(
+          roomType,
+          newX,
+          newY,
+          currentIndex,
+          category,
+          doorDirections,
+          currentRoom
+        );
+
+        this.placeRoom(newRoom);
+        this.connectRooms(currentRoom, newRoom, direction);
+        currentRoom = newRoom;
+        remainingRooms--;
+        currentIndex++;
+        attempts = 0;
+        placedRoom = true;
+        break;
+      }
+
+      if (!placedRoom) {
+        attempts++;
+        continue;
+      }
+    }
+
+    // Update the boss room placement logic to only try east-facing connections
+    if (!this.rooms.some((r) => r.category === "BOSS")) {
+      console.warn("Boss room not placed normally, forcing placement");
+
+      // Find a valid room to branch from - only consider rooms where we can place boss to the east
+      const validRooms = this.rooms.filter((r) => {
+        const directions = this.getAvailableDirections(r.x, r.y, r);
+        return directions.includes("E") && r.category !== "BOSS";
+      });
+
+      if (validRooms.length > 0) {
+        const parentRoom =
+          validRooms[Math.floor(Math.random() * validRooms.length)];
+        const newX = parentRoom.x + 1; // Boss room must be east of parent
+        const newY = parentRoom.y;
+
+        const doorDirections = this.determineRoomDoors("BossRoom");
         const bossRoom = this.createRoom(
           "BossRoom",
           newX,
           newY,
-          this.rooms.length, // Use rooms.length as the index for boss room
+          this.rooms.length,
           "BOSS",
           doorDirections,
           parentRoom
         );
 
         this.placeRoom(bossRoom);
-        this.connectRooms(parentRoom, bossRoom, direction);
+        this.connectRooms(parentRoom, bossRoom, "E");
       }
     }
   }
