@@ -8,7 +8,6 @@ import {
     RoomConfig,
     Door,
 } from "../lib/dungeonGenerator";
-import dynamic from "next/dynamic";
 
 const CELL_SIZE = 40;
 const GRID_SIZE = 100;
@@ -463,17 +462,17 @@ function DungeonDisplay() {
     }, [dungeon]);
 
     // Update handleExportJson
-    const handleExportJson = () => {
-        const data = jsonViewMode === "full" ? dungeon : getSimplifiedDungeon();
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "dungeon.json";
-        a.click();
-        URL.revokeObjectURL(url);
-    };
+    // const handleExportJson = () => {
+    //     const data = jsonViewMode === "full" ? dungeon : getSimplifiedDungeon();
+    //     const json = JSON.stringify(data, null, 2);
+    //     const blob = new Blob([json], { type: "application/json" });
+    //     const url = URL.createObjectURL(blob);
+    //     const a = document.createElement("a");
+    //     a.href = url;
+    //     a.download = "dungeon.json";
+    //     a.click();
+    //     URL.revokeObjectURL(url);
+    // };
 
     const copyJsonToClipboard = () => {
         const simplifiedJson = JSON.stringify(getSimplifiedDungeon(), null, 2);

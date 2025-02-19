@@ -142,7 +142,6 @@ export class DungeonGenerator {
   private currentDepth = 0;
   private roomConfigs: Map<string, RoomConfig>;
   private normalizedWeights: { id: string; weight: number }[];
-  private showJsonPopup = false;
 
   constructor(private config: DungeonConfig) {
     // Merge default configs with custom configs
@@ -444,7 +443,6 @@ export class DungeonGenerator {
   }
 
   private generateMainPath(): void {
-    const staticOrder = this.determineOrder();
     this.currentDepth = 0;
 
     // Create start room
@@ -698,7 +696,7 @@ export class DungeonGenerator {
             newY,
             this.rooms.length, // Use rooms.length as the index for offshoot rooms
             "OFFSHOOT",
-            doorDirections,
+            doorDirections || [],
             parentRoom
           );
 
@@ -937,8 +935,4 @@ export class DungeonGenerator {
 
     return -1; // No path found
   }
-
-  toggleJsonPopup = () => {
-    this.showJsonPopup = !this.showJsonPopup;
-  };
 }
