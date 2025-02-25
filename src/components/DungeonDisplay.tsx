@@ -7,6 +7,7 @@ import {
     RoomCategory,
     RoomConfig,
     Door,
+    DoorConnection,
 } from "../lib/dungeonGenerator";
 
 const CELL_SIZE = 40;
@@ -245,6 +246,9 @@ function DungeonDisplay() {
     const [containerHeight, setContainerHeight] = useState(800);
 
     const [showJsonPopup, setShowJsonPopup] = useState(false); // State for popup visibility
+    const [selectedRoom, setSelectedRoom] = useState<Room | null>(null); // State for selected room
+    const [editedRoomJson, setEditedRoomJson] = useState<string>(""); // State for edited room JSON
+    const [showRoomEditor, setShowRoomEditor] = useState(false); // State for room editor visibility
 
     // Add new state for JSON view mode
     const [jsonViewMode, setJsonViewMode] = useState<"full" | "simplified">(
@@ -252,6 +256,10 @@ function DungeonDisplay() {
     );
 
     const [showToast, setShowToast] = useState(false);
+
+    // Add state for new room creation
+    const [showNewRoomModal, setShowNewRoomModal] = useState(false);
+    const [newRoomPosition, setNewRoomPosition] = useState<{ x: number, y: number } | null>(null);
 
     // Add useEffect to handle window-dependent calculations
     useEffect(() => {
@@ -461,19 +469,6 @@ function DungeonDisplay() {
         }));
     }, [dungeon]);
 
-    // Update handleExportJson
-    // const handleExportJson = () => {
-    //     const data = jsonViewMode === "full" ? dungeon : getSimplifiedDungeon();
-    //     const json = JSON.stringify(data, null, 2);
-    //     const blob = new Blob([json], { type: "application/json" });
-    //     const url = URL.createObjectURL(blob);
-    //     const a = document.createElement("a");
-    //     a.href = url;
-    //     a.download = "dungeon.json";
-    //     a.click();
-    //     URL.revokeObjectURL(url);
-    // };
-
     const copyJsonToClipboard = () => {
         const simplifiedJson = JSON.stringify(getSimplifiedDungeon(), null, 2);
         navigator.clipboard.writeText(simplifiedJson);
@@ -484,6 +479,159 @@ function DungeonDisplay() {
     // Function to toggle JSON popup visibility
     const toggleJsonPopup = () => {
         setShowJsonPopup((prev) => !prev);
+    };
+
+    // Function to handle grid click for adding new rooms
+    const handleGridClick = (e: React.MouseEvent) => {
+        if (isDragging) return; // Don't add rooms while dragging
+
+        // Get click position relative to the grid
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / (CELL_SIZE * zoomLevel));
+        const y = Math.floor((e.clientY - rect.top) / (CELL_SIZE * zoomLevel));
+
+        // Check if the position is valid and empty
+        if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
+            const existingRoom = dungeon.find(room => room.x === x && room.y === y);
+            if (!existingRoom) {
+                // Open the new room modal
+                setNewRoomPosition({ x, y });
+                setShowNewRoomModal(true);
+            }
+        }
+    };
+
+    // Function to recalculate the fastest path
+    const recalculateFastestPath = useCallback(() => {
+        // Only recalculate if we have rooms
+        if (dungeon.length === 0) return;
+
+        try {
+            // Create a new instance of DungeonGenerator
+            const generator = new DungeonGenerator({
+                expnum,
+                totalRooms,
+                offshoots,
+                staticRooms,
+                roomConfigs,
+                staticRoomConfigs,
+                shortcuts,
+                defaultVariations,
+            });
+
+            // Since testFastestPath is a private method in DungeonGenerator,
+            // we need to implement our own BFS algorithm to find the shortest path
+
+            // Find start and end rooms
+            const startRoom = dungeon.find(room => room.category === "START");
+            const endRoom = dungeon.find(room => room.category === "BOSS");
+
+            if (!startRoom || !endRoom) {
+                setFastestPathSteps(-1); // No path possible without start or end
+                return;
+            }
+
+            // Use breadth-first search for guaranteed shortest path
+            const queue: { room: Room; steps: number }[] = [
+                { room: startRoom, steps: 0 },
+            ];
+            const visited = new Set<string>([startRoom.id]);
+
+            while (queue.length > 0) {
+                const { room, steps } = queue.shift()!;
+
+                if (room.id === endRoom.id) {
+                    setFastestPathSteps(steps);
+                    return;
+                }
+
+                for (const door of room.doors) {
+                    if (!door.destinationRoomId || visited.has(door.destinationRoomId))
+                        continue;
+
+                    const nextRoom = dungeon.find(r => r.id === door.destinationRoomId);
+                    if (!nextRoom) continue;
+
+                    visited.add(nextRoom.id);
+                    queue.push({ room: nextRoom, steps: steps + 1 });
+                }
+            }
+
+            // If we get here, no path was found
+            setFastestPathSteps(-1);
+        } catch (error) {
+            console.error("Error calculating fastest path:", error);
+            // Don't update the path if there's an error
+        }
+    }, [dungeon, expnum, totalRooms, offshoots, staticRooms, roomConfigs, staticRoomConfigs, shortcuts, defaultVariations]);
+
+    // Function to create a new room
+    const createNewRoom = (roomType: string) => {
+        if (!newRoomPosition) return;
+
+        try {
+            // Get the room configuration
+            const roomConfig = [...roomConfigs, ...staticRoomConfigs].find(config => config.id === roomType);
+            if (!roomConfig) {
+                throw new Error("Room type not found");
+            }
+
+            // Create a copy of the dungeon
+            const updatedDungeon = [...dungeon];
+
+            // Determine the room category
+            const category = roomConfig.category || "REGULAR_PATH";
+
+            // Create a new room
+            const newRoom: Room = {
+                id: generateUUID(),
+                baseTemplateId: roomType,
+                templateId: roomType,
+                x: newRoomPosition.x,
+                y: newRoomPosition.y,
+                depth: Math.max(...dungeon.map(r => r.depth), 0) + 1, // Set depth to max + 1
+                category: category as RoomCategory,
+                doors: roomConfig.doors.map((direction: Door) => ({
+                    direction,
+                    destinationRoomId: "",
+                    destinationDoor: "N" // Default, will be updated when connected
+                })),
+                expnum: expnum,
+                variation: 0
+            };
+
+            // Add the new room to the dungeon
+            updatedDungeon.push(newRoom);
+
+            // Update the dungeon state
+            setDungeon(updatedDungeon);
+
+            // Close the modal
+            setShowNewRoomModal(false);
+            setNewRoomPosition(null);
+
+            // Select the new room for editing
+            setSelectedRoom(newRoom);
+            setEditedRoomJson(JSON.stringify(newRoom, null, 2));
+            setShowRoomEditor(true);
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        } catch (error) {
+            alert("Error creating room: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
+    // Helper function to generate UUID
+    const generateUUID = (): string => {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+            /[xy]/g,
+            function (c) {
+                const r = (Math.random() * 16) | 0;
+                const v = c === "x" ? r : (r & 0x3) | 0x8;
+                return v.toString(16);
+            }
+        );
     };
 
     // Add functions to manage static room configs
@@ -529,6 +677,466 @@ function DungeonDisplay() {
         );
     };
 
+    // Function to handle room click
+    const handleRoomClick = (room: Room) => {
+        setSelectedRoom(room);
+        setEditedRoomJson(JSON.stringify(room, null, 2));
+        setShowRoomEditor(true);
+    };
+
+    // Function to format JSON in the editor
+    const formatJson = () => {
+        try {
+            const parsed = JSON.parse(editedRoomJson);
+            setEditedRoomJson(JSON.stringify(parsed, null, 2));
+        } catch (error) {
+            alert("Invalid JSON: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
+    // Function to save edited room
+    const saveEditedRoom = () => {
+        try {
+            const updatedRoom = JSON.parse(editedRoomJson);
+
+            // Validate the updated room has the required properties
+            if (!updatedRoom.id || !updatedRoom.doors || !Array.isArray(updatedRoom.doors)) {
+                throw new Error("Room must have id and doors array");
+            }
+
+            // Ensure the room ID hasn't changed
+            if (updatedRoom.id !== selectedRoom?.id) {
+                throw new Error("Room ID cannot be changed");
+            }
+
+            // Create a copy of the dungeon for updates
+            const updatedDungeon = [...dungeon];
+
+            // Find the room index
+            const roomIndex = updatedDungeon.findIndex(room => room.id === selectedRoom?.id);
+            if (roomIndex === -1) {
+                throw new Error("Room not found in dungeon");
+            }
+
+            // Store the original doors for comparison
+            const originalDoors = [...updatedDungeon[roomIndex].doors];
+
+            // Update the room in the dungeon
+            updatedDungeon[roomIndex] = updatedRoom;
+
+            // Update connections to other rooms
+            updatedRoom.doors.forEach((door: DoorConnection) => {
+                if (door.destinationRoomId) {
+                    // Find the destination room
+                    const destRoomIndex = updatedDungeon.findIndex(r => r.id === door.destinationRoomId);
+                    if (destRoomIndex !== -1) {
+                        // Find the corresponding door in the destination room
+                        const oppositeMap: Record<Door, Door> = {
+                            N: "S",
+                            S: "N",
+                            E: "W",
+                            W: "E",
+                            I: "O",
+                            O: "I",
+                        };
+
+                        const oppositeDoor = oppositeMap[door.direction as Door];
+
+                        // Check if the destination room already has a connection back to this room
+                        const existingDoorIndex = updatedDungeon[destRoomIndex].doors.findIndex(
+                            d => d.direction === oppositeDoor && d.destinationRoomId === updatedRoom.id
+                        );
+
+                        if (existingDoorIndex !== -1) {
+                            // Update the existing connection
+                            updatedDungeon[destRoomIndex].doors[existingDoorIndex] = {
+                                ...updatedDungeon[destRoomIndex].doors[existingDoorIndex],
+                                destinationDoor: door.direction,
+                                isShortcut: door.isShortcut
+                            };
+                        } else {
+                            // Create a new connection
+                            updatedDungeon[destRoomIndex].doors.push({
+                                direction: oppositeDoor,
+                                destinationRoomId: updatedRoom.id,
+                                destinationDoor: door.direction,
+                                isShortcut: door.isShortcut
+                            });
+                        }
+                    }
+                }
+            });
+
+            // Remove connections that were deleted
+            originalDoors.forEach((originalDoor: DoorConnection) => {
+                if (originalDoor.destinationRoomId) {
+                    // Check if this connection still exists in the updated room
+                    const stillExists = updatedRoom.doors.some(
+                        (door: DoorConnection) => door.direction === originalDoor.direction &&
+                            door.destinationRoomId === originalDoor.destinationRoomId
+                    );
+
+                    if (!stillExists) {
+                        // Find the destination room
+                        const destRoomIndex = updatedDungeon.findIndex(r => r.id === originalDoor.destinationRoomId);
+                        if (destRoomIndex !== -1) {
+                            // Find the opposite door in the destination room
+                            const oppositeMap: Record<Door, Door> = {
+                                N: "S",
+                                S: "N",
+                                E: "W",
+                                W: "E",
+                                I: "O",
+                                O: "I",
+                            };
+
+                            const oppositeDoor = oppositeMap[originalDoor.direction as Door];
+
+                            // Remove the connection from the destination room
+                            updatedDungeon[destRoomIndex].doors = updatedDungeon[destRoomIndex].doors.filter(
+                                d => !(d.direction === oppositeDoor && d.destinationRoomId === updatedRoom.id)
+                            );
+                        }
+                    }
+                }
+            });
+
+            // Update the dungeon state
+            setDungeon(updatedDungeon);
+            setShowRoomEditor(false);
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        } catch (error) {
+            alert("Error: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
+    // Function to get available adjacent rooms for connections
+    const getAvailableAdjacentRooms = (room: Room) => {
+        const adjacentPositions = [
+            { direction: "N" as Door, x: room.x, y: room.y - 1 },
+            { direction: "S" as Door, x: room.x, y: room.y + 1 },
+            { direction: "E" as Door, x: room.x + 1, y: room.y },
+            { direction: "W" as Door, x: room.x - 1, y: room.y },
+        ];
+
+        // Check if the room already has a door in this direction
+        const existingDoorDirections = room.doors
+            .filter(door => door.destinationRoomId) // Only consider doors with connections
+            .map(door => door.direction);
+
+        return adjacentPositions
+            .filter(({ direction, x, y }) => {
+                // Skip if the room already has a connected door in this direction
+                if (existingDoorDirections.includes(direction)) return false;
+
+                // Find if there's a room at this position
+                const adjacentRoom = dungeon.find(r => r.x === x && r.y === y);
+                if (!adjacentRoom) return false;
+
+                // Check if the room has a door in this direction (connected or not)
+                const hasDoorInDirection = room.doors.some(door => door.direction === direction);
+                if (!hasDoorInDirection) return false;
+
+                // Check if the adjacent room has a door in the opposite direction
+                const oppositeMap: Record<Door, Door> = {
+                    N: "S",
+                    S: "N",
+                    E: "W",
+                    W: "E",
+                    I: "O",
+                    O: "I",
+                };
+                const oppositeDirection = oppositeMap[direction];
+
+                // Check if the adjacent room has a door in the opposite direction
+                const adjacentRoomHasDoor = adjacentRoom.doors.some(
+                    door => door.direction === oppositeDirection
+                );
+
+                // We want rooms that have a door in the opposite direction
+                return adjacentRoomHasDoor;
+            })
+            .map(({ direction, x, y }) => ({
+                direction,
+                room: dungeon.find(r => r.x === x && r.y === y)!
+            }));
+    };
+
+    // Function to add a connection to an adjacent room
+    const addRoomConnection = (sourceRoom: Room, direction: Door, targetRoom: Room) => {
+        try {
+            // Create a copy of the dungeon
+            const updatedDungeon = [...dungeon];
+
+            // Find the source and target room indices
+            const sourceIndex = updatedDungeon.findIndex(r => r.id === sourceRoom.id);
+            const targetIndex = updatedDungeon.findIndex(r => r.id === targetRoom.id);
+
+            if (sourceIndex === -1 || targetIndex === -1) {
+                throw new Error("Room not found");
+            }
+
+            // Get the opposite direction
+            const oppositeMap: Record<Door, Door> = {
+                N: "S",
+                S: "N",
+                E: "W",
+                W: "E",
+                I: "O",
+                O: "I",
+            };
+            const oppositeDirection = oppositeMap[direction];
+
+            // Find the door in the source room
+            const sourceDoorIndex = updatedDungeon[sourceIndex].doors.findIndex(
+                door => door.direction === direction && !door.destinationRoomId
+            );
+
+            if (sourceDoorIndex === -1) {
+                // If no unconnected door exists in this direction, add one
+                updatedDungeon[sourceIndex].doors.push({
+                    direction,
+                    destinationRoomId: targetRoom.id,
+                    destinationDoor: oppositeDirection
+                });
+            } else {
+                // Update the existing door
+                updatedDungeon[sourceIndex].doors[sourceDoorIndex] = {
+                    ...updatedDungeon[sourceIndex].doors[sourceDoorIndex],
+                    destinationRoomId: targetRoom.id,
+                    destinationDoor: oppositeDirection
+                };
+            }
+
+            // Find the door in the target room
+            const targetDoorIndex = updatedDungeon[targetIndex].doors.findIndex(
+                door => door.direction === oppositeDirection && !door.destinationRoomId
+            );
+
+            if (targetDoorIndex === -1) {
+                // If no unconnected door exists in this direction, add one
+                updatedDungeon[targetIndex].doors.push({
+                    direction: oppositeDirection,
+                    destinationRoomId: sourceRoom.id,
+                    destinationDoor: direction
+                });
+            } else {
+                // Update the existing door
+                updatedDungeon[targetIndex].doors[targetDoorIndex] = {
+                    ...updatedDungeon[targetIndex].doors[targetDoorIndex],
+                    destinationRoomId: sourceRoom.id,
+                    destinationDoor: direction
+                };
+            }
+
+            // Update the dungeon
+            setDungeon(updatedDungeon);
+
+            // Update the selected room and JSON
+            setSelectedRoom(updatedDungeon[sourceIndex]);
+            setEditedRoomJson(JSON.stringify(updatedDungeon[sourceIndex], null, 2));
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        } catch (error) {
+            alert("Error adding connection: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
+    // Function to remove a connection
+    const removeRoomConnection = (sourceRoom: Room, doorIndex: number) => {
+        try {
+            // Create a copy of the dungeon
+            const updatedDungeon = [...dungeon];
+
+            // Find the source room index
+            const sourceIndex = updatedDungeon.findIndex(r => r.id === sourceRoom.id);
+
+            if (sourceIndex === -1 || doorIndex >= sourceRoom.doors.length) {
+                throw new Error("Room or door not found");
+            }
+
+            const doorToRemove = sourceRoom.doors[doorIndex];
+
+            // Skip if the door doesn't have a destination
+            if (!doorToRemove.destinationRoomId) {
+                return;
+            }
+
+            // Find the target room
+            const targetIndex = updatedDungeon.findIndex(r => r.id === doorToRemove.destinationRoomId);
+
+            if (targetIndex !== -1) {
+                // Get the opposite direction
+                const oppositeMap: Record<Door, Door> = {
+                    N: "S",
+                    S: "N",
+                    E: "W",
+                    W: "E",
+                    I: "O",
+                    O: "I",
+                };
+                const oppositeDirection = oppositeMap[doorToRemove.direction as Door];
+
+                // Remove the corresponding door from the target room
+                updatedDungeon[targetIndex].doors = updatedDungeon[targetIndex].doors.filter(
+                    d => !(d.direction === oppositeDirection && d.destinationRoomId === sourceRoom.id)
+                );
+            }
+
+            // Remove the door from the source room
+            updatedDungeon[sourceIndex].doors.splice(doorIndex, 1);
+
+            // Update the dungeon state
+            setDungeon(updatedDungeon);
+
+            // Update the selected room and JSON
+            setSelectedRoom(updatedDungeon[sourceIndex]);
+            setEditedRoomJson(JSON.stringify(updatedDungeon[sourceIndex], null, 2));
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        } catch (error) {
+            alert("Error removing connection: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
+    // Function to toggle shortcut status
+    const toggleShortcut = (sourceRoom: Room, doorIndex: number) => {
+        try {
+            // Create a copy of the dungeon
+            const updatedDungeon = [...dungeon];
+
+            // Find the source room index
+            const sourceIndex = updatedDungeon.findIndex(r => r.id === sourceRoom.id);
+
+            if (sourceIndex === -1 || doorIndex >= sourceRoom.doors.length) {
+                throw new Error("Room or door not found");
+            }
+
+            const door = updatedDungeon[sourceIndex].doors[doorIndex];
+
+            // Skip if the door doesn't have a destination
+            if (!door.destinationRoomId) {
+                return;
+            }
+
+            // Toggle the shortcut status
+            const newShortcutStatus = !door.isShortcut;
+            updatedDungeon[sourceIndex].doors[doorIndex] = {
+                ...door,
+                isShortcut: newShortcutStatus
+            };
+
+            // Find the target room
+            const targetIndex = updatedDungeon.findIndex(r => r.id === door.destinationRoomId);
+
+            if (targetIndex !== -1) {
+                // Get the opposite direction
+                const oppositeMap: Record<Door, Door> = {
+                    N: "S",
+                    S: "N",
+                    E: "W",
+                    W: "E",
+                    I: "O",
+                    O: "I",
+                };
+                const oppositeDirection = oppositeMap[door.direction as Door];
+
+                // Find the corresponding door in the target room
+                const targetDoorIndex = updatedDungeon[targetIndex].doors.findIndex(
+                    d => d.direction === oppositeDirection && d.destinationRoomId === sourceRoom.id
+                );
+
+                if (targetDoorIndex !== -1) {
+                    // Update the shortcut status in the target room
+                    updatedDungeon[targetIndex].doors[targetDoorIndex] = {
+                        ...updatedDungeon[targetIndex].doors[targetDoorIndex],
+                        isShortcut: newShortcutStatus
+                    };
+                }
+            }
+
+            // Update the dungeon state
+            setDungeon(updatedDungeon);
+
+            // Update the selected room and JSON
+            setSelectedRoom(updatedDungeon[sourceIndex]);
+            setEditedRoomJson(JSON.stringify(updatedDungeon[sourceIndex], null, 2));
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        } catch (error) {
+            alert("Error toggling shortcut: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
+    // Function to delete a room
+    const deleteRoom = (roomToDelete: Room) => {
+        try {
+            // Create a copy of the dungeon
+            const updatedDungeon = [...dungeon];
+
+            // Find the room index
+            const roomIndex = updatedDungeon.findIndex(room => room.id === roomToDelete.id);
+            if (roomIndex === -1) {
+                throw new Error("Room not found in dungeon");
+            }
+
+            // Get all connections to this room
+            const connectionsToRemove = roomToDelete.doors.filter(door => door.destinationRoomId);
+
+            // Remove connections from other rooms to this room
+            connectionsToRemove.forEach(door => {
+                if (door.destinationRoomId) {
+                    const connectedRoomIndex = updatedDungeon.findIndex(r => r.id === door.destinationRoomId);
+                    if (connectedRoomIndex !== -1) {
+                        // Find the opposite direction
+                        const oppositeMap: Record<Door, Door> = {
+                            N: "S",
+                            S: "N",
+                            E: "W",
+                            W: "E",
+                            I: "O",
+                            O: "I",
+                        };
+                        const oppositeDirection = oppositeMap[door.direction as Door];
+
+                        // Instead of removing the door, just remove the connection
+                        updatedDungeon[connectedRoomIndex].doors = updatedDungeon[connectedRoomIndex].doors.map(d => {
+                            if (d.direction === oppositeDirection && d.destinationRoomId === roomToDelete.id) {
+                                // Keep the door but remove the connection (will appear red)
+                                return {
+                                    direction: d.direction,
+                                    destinationRoomId: "",
+                                    destinationDoor: "N" // Default value
+                                };
+                            }
+                            return d;
+                        });
+                    }
+                }
+            });
+
+            // Remove the room from the dungeon
+            updatedDungeon.splice(roomIndex, 1);
+
+            // Update the dungeon state
+            setDungeon(updatedDungeon);
+
+            // Close the room editor
+            setShowRoomEditor(false);
+            setSelectedRoom(null);
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        } catch (error) {
+            alert("Error deleting room: " + (error instanceof Error ? error.message : String(error)));
+        }
+    };
+
     return (
         <div className="p-4 text-black" style={{ overflowX: "hidden" }}>
             <div className="zoom-controls">
@@ -562,6 +1170,7 @@ function DungeonDisplay() {
                         transform: `scale(${zoomLevel})`,
                         transformOrigin: "top left",
                     }}
+                    onClick={handleGridClick}
                 >
                     {renderCoordinates()}
                     {dungeon.map((room, i) => (
@@ -574,9 +1183,19 @@ function DungeonDisplay() {
                                 width: CELL_SIZE - 2,
                                 height: CELL_SIZE - 2,
                                 backgroundColor: categoryColors[room.category],
-                                border: "1px solid black",
-                                zIndex: 1,
+                                border: selectedRoom?.id === room.id
+                                    ? "2px solid white"
+                                    : "1px solid black",
+                                boxShadow: selectedRoom?.id === room.id
+                                    ? "0 0 8px rgba(255, 255, 255, 0.8)"
+                                    : "none",
+                                zIndex: selectedRoom?.id === room.id ? 10 : 1,
+                                cursor: "pointer", // Add pointer cursor to indicate clickability
                             }}
+                            onClick={(e) => {
+                                e.stopPropagation(); // Prevent grid click
+                                handleRoomClick(room);
+                            }} // Add click handler
                             title={`Base Template: ${room.baseTemplateId}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
                         >
                             {room.doors.map((door) => (
@@ -725,8 +1344,7 @@ function DungeonDisplay() {
                                         updateOffshoot(
                                             i,
                                             "count",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
+                                            Math.max(1, parseInt(e.target.value) || 1))
                                     }
                                     className="border p-1 rounded w-16"
                                     min="1"
@@ -739,8 +1357,7 @@ function DungeonDisplay() {
                                         updateOffshoot(
                                             i,
                                             "depth",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
+                                            Math.max(1, parseInt(e.target.value) || 1))
                                     }
                                     className="border p-1 rounded w-16"
                                     min="1"
@@ -780,8 +1397,7 @@ function DungeonDisplay() {
                                         updateStaticRoom(
                                             i,
                                             "index",
-                                            Math.max(0, parseInt(e.target.value) || 0)
-                                        )
+                                            Math.max(0, parseInt(e.target.value) || 0))
                                     }
                                     className="border p-1 rounded w-16"
                                     min="0"
@@ -845,7 +1461,9 @@ function DungeonDisplay() {
                                         <input
                                             type="checkbox"
                                             checked={config.doors.includes(door)}
-                                            onChange={() => updateStaticRoomConfig(i, "doors", door)}
+                                            onChange={(e) =>
+                                                updateStaticRoomConfig(i, "doors", door)
+                                            }
                                         />
                                         {door}
                                     </label>
@@ -860,8 +1478,7 @@ function DungeonDisplay() {
                                         updateStaticRoomConfig(
                                             i,
                                             "variations",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
+                                            Math.max(1, parseInt(e.target.value) || 1))
                                     }
                                     className="border p-1 rounded w-20"
                                     min="1"
@@ -899,8 +1516,7 @@ function DungeonDisplay() {
                                         updateRoomConfig(
                                             i,
                                             "weight",
-                                            parseFloat(e.target.value) || 0
-                                        )
+                                            parseFloat(e.target.value) || 0)
                                     }
                                     className="border p-1 rounded w-20"
                                     step="0.01"
@@ -915,8 +1531,7 @@ function DungeonDisplay() {
                                         updateRoomConfig(
                                             i,
                                             "variations",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
+                                            Math.max(1, parseInt(e.target.value) || 1))
                                     }
                                     className="border p-1 rounded w-20"
                                     min="1"
@@ -935,7 +1550,7 @@ function DungeonDisplay() {
                                         <input
                                             type="checkbox"
                                             checked={config.doors.includes(door)}
-                                            onChange={() => updateRoomConfig(i, "doors", door)}
+                                            onChange={(e) => updateRoomConfig(i, "doors", door)}
                                         />
                                         {door}
                                     </label>
@@ -1020,6 +1635,242 @@ function DungeonDisplay() {
                             ) : (
                                 <pre>{JSON.stringify(getSimplifiedDungeon(), null, 2)}</pre>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Room Editor Popup */}
+            {showRoomEditor && selectedRoom && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                    <div
+                        className="bg-white p-4 rounded shadow-lg w-3/4 max-w-4xl"
+                        style={{ maxHeight: "80vh", overflowY: "auto" }}
+                    >
+                        <div className="flex justify-between mb-4">
+                            <h3 className="font-bold text-lg">
+                                Edit Room: {selectedRoom.baseTemplateId} ({selectedRoom.x}, {selectedRoom.y})
+                            </h3>
+                            <button
+                                onClick={() => setShowRoomEditor(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Room summary */}
+                        <div className="mb-4 p-3 bg-gray-100 rounded border border-gray-300">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                    <span className="font-semibold">ID:</span> <span className="font-mono">{selectedRoom.id.substring(0, 8)}...</span>
+                                </div>
+                                <div>
+                                    <span className="font-semibold">Category:</span> {selectedRoom.category}
+                                </div>
+                                <div>
+                                    <span className="font-semibold">Template:</span> {selectedRoom.baseTemplateId}
+                                </div>
+                                <div>
+                                    <span className="font-semibold">Depth:</span> {selectedRoom.depth}
+                                </div>
+                                <div>
+                                    <span className="font-semibold">Position:</span> ({selectedRoom.x}, {selectedRoom.y})
+                                </div>
+                                <div>
+                                    <span className="font-semibold">Doors:</span> {selectedRoom.doors.length}
+                                </div>
+                                <div className="col-span-2">
+                                    <span className="font-semibold">Connections:</span> {selectedRoom.doors.filter(d => d.destinationRoomId).length}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Existing Connections */}
+                        <div className="mb-4">
+                            <h4 className="font-semibold mb-2">Existing Connections:</h4>
+                            <div className="grid grid-cols-1 gap-2">
+                                {selectedRoom.doors.filter(door => door.destinationRoomId).length > 0 ? (
+                                    selectedRoom.doors.map((door, index) => {
+                                        if (!door.destinationRoomId) return null;
+
+                                        // Find the connected room
+                                        const connectedRoom = dungeon.find(r => r.id === door.destinationRoomId);
+                                        if (!connectedRoom) return null;
+
+                                        return (
+                                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 border rounded">
+                                                <div>
+                                                    <span className="font-semibold">{door.direction}:</span> {connectedRoom.baseTemplateId} ({connectedRoom.x}, {connectedRoom.y})
+                                                    <span className="ml-2 text-xs text-gray-500">
+                                                        Category: {connectedRoom.category}, Depth: {connectedRoom.depth}
+                                                    </span>
+                                                    {door.isShortcut && (
+                                                        <span className="ml-2 text-xs text-green-600 font-semibold">
+                                                            Shortcut
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => toggleShortcut(selectedRoom, index)}
+                                                        className={`px-2 py-1 ${door.isShortcut ? 'bg-green-500' : 'bg-gray-300'} text-white rounded text-sm hover:opacity-80`}
+                                                        title={door.isShortcut ? "Remove shortcut" : "Mark as shortcut"}
+                                                    >
+                                                        {door.isShortcut ? "Shortcut ✓" : "Shortcut"}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => removeRoomConnection(selectedRoom, index)}
+                                                        className="px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="text-gray-500 italic">No connections</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Available Adjacent Rooms */}
+                        <div className="mb-4">
+                            <h4 className="font-semibold mb-2">Available Adjacent Rooms:</h4>
+                            <div className="grid grid-cols-1 gap-2">
+                                {getAvailableAdjacentRooms(selectedRoom).length > 0 ? (
+                                    getAvailableAdjacentRooms(selectedRoom).map(({ direction, room }) => (
+                                        <div key={direction} className="flex items-center justify-between p-2 bg-gray-50 border rounded">
+                                            <div>
+                                                <span className="font-semibold">{direction}:</span> {room.baseTemplateId} ({room.x}, {room.y})
+                                                <span className="ml-2 text-xs text-gray-500">
+                                                    Category: {room.category}, Depth: {room.depth}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => addRoomConnection(selectedRoom, direction, room)}
+                                                className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                                            >
+                                                Add Connection
+                                            </button>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-gray-500 italic">No available adjacent rooms for new connections</div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mb-2 flex justify-between items-center">
+                            <div>
+                                <span className="text-sm text-gray-600">Edit JSON directly:</span>
+                            </div>
+                            <button
+                                onClick={formatJson}
+                                className="px-2 py-1 bg-gray-200 text-gray-800 rounded text-sm hover:bg-gray-300"
+                            >
+                                Format JSON
+                            </button>
+                        </div>
+                        <textarea
+                            value={editedRoomJson}
+                            onChange={(e) => setEditedRoomJson(e.target.value)}
+                            className="w-full h-96 font-mono text-sm p-2 border rounded bg-gray-50"
+                            spellCheck="false"
+                        />
+                        <div className="flex justify-between gap-2 mt-4">
+                            <button
+                                onClick={() => {
+                                    if (window.confirm(`Are you sure you want to delete this room? This will remove all connections to it.`)) {
+                                        deleteRoom(selectedRoom);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                            >
+                                Delete Room
+                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setShowRoomEditor(false)}
+                                    className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={saveEditedRoom}
+                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* New Room Modal */}
+            {showNewRoomModal && newRoomPosition && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                    <div className="bg-white p-4 rounded shadow-lg w-96">
+                        <div className="flex justify-between mb-4">
+                            <h3 className="font-bold text-lg">
+                                Add New Room at ({newRoomPosition.x}, {newRoomPosition.y})
+                            </h3>
+                            <button
+                                onClick={() => setShowNewRoomModal(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="mb-4">
+                            <h4 className="font-semibold mb-2">Select Room Type:</h4>
+                            <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
+                                {/* Regular Room Types */}
+                                <div className="mb-2">
+                                    <h5 className="font-medium text-sm mb-1 text-gray-700">Regular Rooms:</h5>
+                                    {roomConfigs.map((config: RoomConfig) => (
+                                        <button
+                                            key={config.id}
+                                            onClick={() => createNewRoom(config.id)}
+                                            className="w-full text-left p-2 mb-1 bg-blue-50 hover:bg-blue-100 rounded flex justify-between items-center"
+                                        >
+                                            <span>{config.id}</span>
+                                            <span className="text-xs text-gray-500">
+                                                Doors: {config.doors.join(", ")}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Static Room Types */}
+                                <div>
+                                    <h5 className="font-medium text-sm mb-1 text-gray-700">Static Rooms:</h5>
+                                    {staticRoomConfigs.map((config: RoomConfig) => (
+                                        <button
+                                            key={config.id}
+                                            onClick={() => createNewRoom(config.id)}
+                                            className="w-full text-left p-2 mb-1 bg-purple-50 hover:bg-purple-100 rounded flex justify-between items-center"
+                                        >
+                                            <span>{config.id}</span>
+                                            <span className="text-xs text-gray-500">
+                                                Doors: {config.doors.join(", ")}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => setShowNewRoomModal(false)}
+                                className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
+                            >
+                                Cancel
+                            </button>
                         </div>
                     </div>
                 </div>
