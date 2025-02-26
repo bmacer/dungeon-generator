@@ -136,6 +136,59 @@ function DungeonDisplay() {
         return saved ? parseInt(saved) : 2;
     });
 
+    const [zoomLevel, setZoomLevel] = useState(1);
+
+    const [isDragging, setIsDragging] = useState(false);
+    const [startX, setStartX] = useState(0);
+    const [scrollLeft, setScrollLeft] = useState(0);
+
+    const [fastestPathSteps, setFastestPathSteps] = useState<number | null>(null);
+
+    // Replace the static width calculation with state
+    const [containerWidth, setContainerWidth] = useState(800);
+    const [containerHeight, setContainerHeight] = useState(800);
+
+    const [showJsonPopup, setShowJsonPopup] = useState(false); // State for popup visibility
+    const [selectedRoom, setSelectedRoom] = useState<Room | null>(null); // State for selected room
+    const [editedRoomJson, setEditedRoomJson] = useState<string>(""); // State for edited room JSON
+    const [showRoomEditor, setShowRoomEditor] = useState(false); // State for room editor visibility
+
+    // Add new state for JSON view mode
+    const [jsonViewMode, setJsonViewMode] = useState<"full" | "simplified">(
+        "full"
+    );
+
+    const [showToast, setShowToast] = useState(false);
+
+    // Add state for new room creation
+    const [showNewRoomModal, setShowNewRoomModal] = useState(false);
+    const [newRoomPosition, setNewRoomPosition] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
+
+    const centerView = useCallback(() => {
+        if (containerRef.current) {
+            // Calculate the center position at coordinates (50, 50)
+            // Since the grid is 0-indexed, (50, 50) is actually the 51st cell in each direction
+            const targetX = 50 * CELL_SIZE;
+            const targetY = 50 * CELL_SIZE;
+
+            // Account for current zoom level
+            const scaledTargetX = targetX * zoomLevel;
+            const scaledTargetY = targetY * zoomLevel;
+
+            const containerWidth = containerRef.current.clientWidth;
+            const containerHeight = containerRef.current.clientHeight;
+
+            containerRef.current.scrollTo({
+                left: scaledTargetX - containerWidth / 2,
+                top: scaledTargetY - containerHeight / 2,
+                behavior: "smooth",
+            });
+        }
+    }, [zoomLevel]);
+
     const generateDungeon = useCallback(() => {
         const generator = new DungeonGenerator({
             expnum,
@@ -161,21 +214,6 @@ function DungeonDisplay() {
         shortcuts,
         defaultVariations,
     ]);
-
-    const centerView = useCallback(() => {
-        if (containerRef.current) {
-            const centerX = (GRID_SIZE * CELL_SIZE) / 2;
-            const centerY = (GRID_SIZE * CELL_SIZE) / 2;
-            const containerWidth = containerRef.current.clientWidth;
-            const containerHeight = containerRef.current.clientHeight;
-
-            containerRef.current.scrollTo({
-                left: centerX - containerWidth / 2,
-                top: centerY - containerHeight / 2,
-                behavior: "smooth",
-            });
-        }
-    }, []);
 
     // Save to localStorage when values change
     useEffect(() => {
@@ -233,41 +271,13 @@ function DungeonDisplay() {
         setDefaultVariations(2);
     }, []);
 
-    const [zoomLevel, setZoomLevel] = useState(1);
-
-    const [isDragging, setIsDragging] = useState(false);
-    const [startX, setStartX] = useState(0);
-    const [scrollLeft, setScrollLeft] = useState(0);
-
-    const [fastestPathSteps, setFastestPathSteps] = useState<number | null>(null);
-
-    // Replace the static width calculation with state
-    const [containerWidth, setContainerWidth] = useState(800);
-    const [containerHeight, setContainerHeight] = useState(800);
-
-    const [showJsonPopup, setShowJsonPopup] = useState(false); // State for popup visibility
-    const [selectedRoom, setSelectedRoom] = useState<Room | null>(null); // State for selected room
-    const [editedRoomJson, setEditedRoomJson] = useState<string>(""); // State for edited room JSON
-    const [showRoomEditor, setShowRoomEditor] = useState(false); // State for room editor visibility
-
-    // Add new state for JSON view mode
-    const [jsonViewMode, setJsonViewMode] = useState<"full" | "simplified">(
-        "full"
-    );
-
-    const [showToast, setShowToast] = useState(false);
-
-    // Add state for new room creation
-    const [showNewRoomModal, setShowNewRoomModal] = useState(false);
-    const [newRoomPosition, setNewRoomPosition] = useState<{ x: number, y: number } | null>(null);
-
     // Add useEffect to handle window-dependent calculations
     useEffect(() => {
         setContainerWidth(Math.min(800, window.innerWidth - 32));
         setContainerHeight(Math.min(800, window.innerHeight - 200));
         generateDungeon(); // Generate once on initial load
         centerView();
-    }, [generateDungeon, centerView]);
+    }, [generateDungeon, centerView, zoomLevel]);
 
     const addRoomConfig = () => {
         setRoomConfigs([
@@ -418,11 +428,81 @@ function DungeonDisplay() {
     };
 
     const zoomIn = () => {
-        setZoomLevel((prev) => Math.min(prev + 0.1, 2)); // Max zoom level of 2
+        if (!containerRef.current) return;
+
+        // Get current scroll position and container dimensions
+        const container = containerRef.current;
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+
+        // Calculate the center point of the current view
+        const centerX = container.scrollLeft + containerWidth / 2;
+        const centerY = container.scrollTop + containerHeight / 2;
+
+        // Calculate the ratio between the current center and the total scaled size
+        const ratioX = centerX / (GRID_SIZE * CELL_SIZE * zoomLevel);
+        const ratioY = centerY / (GRID_SIZE * CELL_SIZE * zoomLevel);
+
+        // Update zoom level
+        setZoomLevel((prev) => {
+            const newZoom = Math.min(prev + 0.5, 2); // Max zoom level of 2
+
+            // Calculate new scroll position to maintain the same center point
+            setTimeout(() => {
+                const newTotalWidth = GRID_SIZE * CELL_SIZE * newZoom;
+                const newTotalHeight = GRID_SIZE * CELL_SIZE * newZoom;
+
+                const newScrollLeft = ratioX * newTotalWidth - containerWidth / 2;
+                const newScrollTop = ratioY * newTotalHeight - containerHeight / 2;
+
+                container.scrollTo({
+                    left: newScrollLeft,
+                    top: newScrollTop,
+                    behavior: "auto", // Use 'auto' for immediate scrolling
+                });
+            }, 0);
+
+            return newZoom;
+        });
     };
 
     const zoomOut = () => {
-        setZoomLevel((prev) => Math.max(prev - 0.1, 0.5)); // Min zoom level of 0.5
+        if (!containerRef.current) return;
+
+        // Get current scroll position and container dimensions
+        const container = containerRef.current;
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+
+        // Calculate the center point of the current view
+        const centerX = container.scrollLeft + containerWidth / 2;
+        const centerY = container.scrollTop + containerHeight / 2;
+
+        // Calculate the ratio between the current center and the total scaled size
+        const ratioX = centerX / (GRID_SIZE * CELL_SIZE * zoomLevel);
+        const ratioY = centerY / (GRID_SIZE * CELL_SIZE * zoomLevel);
+
+        // Update zoom level
+        setZoomLevel((prev) => {
+            const newZoom = Math.max(prev - 0.5, 0.5); // Min zoom level of 0.5
+
+            // Calculate new scroll position to maintain the same center point
+            setTimeout(() => {
+                const newTotalWidth = GRID_SIZE * CELL_SIZE * newZoom;
+                const newTotalHeight = GRID_SIZE * CELL_SIZE * newZoom;
+
+                const newScrollLeft = ratioX * newTotalWidth - containerWidth / 2;
+                const newScrollTop = ratioY * newTotalHeight - containerHeight / 2;
+
+                container.scrollTo({
+                    left: newScrollLeft,
+                    top: newScrollTop,
+                    behavior: "auto", // Use 'auto' for immediate scrolling
+                });
+            }, 0);
+
+            return newZoom;
+        });
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -492,7 +572,7 @@ function DungeonDisplay() {
 
         // Check if the position is valid and empty
         if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
-            const existingRoom = dungeon.find(room => room.x === x && room.y === y);
+            const existingRoom = dungeon.find((room) => room.x === x && room.y === y);
             if (!existingRoom) {
                 // Open the new room modal
                 setNewRoomPosition({ x, y });
@@ -523,8 +603,8 @@ function DungeonDisplay() {
             // we need to implement our own BFS algorithm to find the shortest path
 
             // Find start and end rooms
-            const startRoom = dungeon.find(room => room.category === "START");
-            const endRoom = dungeon.find(room => room.category === "BOSS");
+            const startRoom = dungeon.find((room) => room.category === "START");
+            const endRoom = dungeon.find((room) => room.category === "BOSS");
 
             if (!startRoom || !endRoom) {
                 setFastestPathSteps(-1); // No path possible without start or end
@@ -549,7 +629,7 @@ function DungeonDisplay() {
                     if (!door.destinationRoomId || visited.has(door.destinationRoomId))
                         continue;
 
-                    const nextRoom = dungeon.find(r => r.id === door.destinationRoomId);
+                    const nextRoom = dungeon.find((r) => r.id === door.destinationRoomId);
                     if (!nextRoom) continue;
 
                     visited.add(nextRoom.id);
@@ -563,7 +643,17 @@ function DungeonDisplay() {
             console.error("Error calculating fastest path:", error);
             // Don't update the path if there's an error
         }
-    }, [dungeon, expnum, totalRooms, offshoots, staticRooms, roomConfigs, staticRoomConfigs, shortcuts, defaultVariations]);
+    }, [
+        dungeon,
+        expnum,
+        totalRooms,
+        offshoots,
+        staticRooms,
+        roomConfigs,
+        staticRoomConfigs,
+        shortcuts,
+        defaultVariations,
+    ]);
 
     // Function to create a new room
     const createNewRoom = (roomType: string) => {
@@ -571,7 +661,9 @@ function DungeonDisplay() {
 
         try {
             // Get the room configuration
-            const roomConfig = [...roomConfigs, ...staticRoomConfigs].find(config => config.id === roomType);
+            const roomConfig = [...roomConfigs, ...staticRoomConfigs].find(
+                (config) => config.id === roomType
+            );
             if (!roomConfig) {
                 throw new Error("Room type not found");
             }
@@ -589,15 +681,15 @@ function DungeonDisplay() {
                 templateId: roomType,
                 x: newRoomPosition.x,
                 y: newRoomPosition.y,
-                depth: Math.max(...dungeon.map(r => r.depth), 0) + 1, // Set depth to max + 1
+                depth: Math.max(...dungeon.map((r) => r.depth), 0) + 1, // Set depth to max + 1
                 category: category as RoomCategory,
                 doors: roomConfig.doors.map((direction: Door) => ({
                     direction,
                     destinationRoomId: "",
-                    destinationDoor: "N" // Default, will be updated when connected
+                    destinationDoor: "N", // Default, will be updated when connected
                 })),
                 expnum: expnum,
-                variation: 0
+                variation: 0,
             };
 
             // Add the new room to the dungeon
@@ -618,7 +710,10 @@ function DungeonDisplay() {
             // Recalculate fastest path
             setTimeout(recalculateFastestPath, 0);
         } catch (error) {
-            alert("Error creating room: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Error creating room: " +
+                (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
@@ -690,7 +785,10 @@ function DungeonDisplay() {
             const parsed = JSON.parse(editedRoomJson);
             setEditedRoomJson(JSON.stringify(parsed, null, 2));
         } catch (error) {
-            alert("Invalid JSON: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Invalid JSON: " +
+                (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
@@ -700,7 +798,11 @@ function DungeonDisplay() {
             const updatedRoom = JSON.parse(editedRoomJson);
 
             // Validate the updated room has the required properties
-            if (!updatedRoom.id || !updatedRoom.doors || !Array.isArray(updatedRoom.doors)) {
+            if (
+                !updatedRoom.id ||
+                !updatedRoom.doors ||
+                !Array.isArray(updatedRoom.doors)
+            ) {
                 throw new Error("Room must have id and doors array");
             }
 
@@ -713,7 +815,9 @@ function DungeonDisplay() {
             const updatedDungeon = [...dungeon];
 
             // Find the room index
-            const roomIndex = updatedDungeon.findIndex(room => room.id === selectedRoom?.id);
+            const roomIndex = updatedDungeon.findIndex(
+                (room) => room.id === selectedRoom?.id
+            );
             if (roomIndex === -1) {
                 throw new Error("Room not found in dungeon");
             }
@@ -728,7 +832,9 @@ function DungeonDisplay() {
             updatedRoom.doors.forEach((door: DoorConnection) => {
                 if (door.destinationRoomId) {
                     // Find the destination room
-                    const destRoomIndex = updatedDungeon.findIndex(r => r.id === door.destinationRoomId);
+                    const destRoomIndex = updatedDungeon.findIndex(
+                        (r) => r.id === door.destinationRoomId
+                    );
                     if (destRoomIndex !== -1) {
                         // Find the corresponding door in the destination room
                         const oppositeMap: Record<Door, Door> = {
@@ -743,8 +849,12 @@ function DungeonDisplay() {
                         const oppositeDoor = oppositeMap[door.direction as Door];
 
                         // Check if the destination room already has a connection back to this room
-                        const existingDoorIndex = updatedDungeon[destRoomIndex].doors.findIndex(
-                            d => d.direction === oppositeDoor && d.destinationRoomId === updatedRoom.id
+                        const existingDoorIndex = updatedDungeon[
+                            destRoomIndex
+                        ].doors.findIndex(
+                            (d) =>
+                                d.direction === oppositeDoor &&
+                                d.destinationRoomId === updatedRoom.id
                         );
 
                         if (existingDoorIndex !== -1) {
@@ -752,7 +862,7 @@ function DungeonDisplay() {
                             updatedDungeon[destRoomIndex].doors[existingDoorIndex] = {
                                 ...updatedDungeon[destRoomIndex].doors[existingDoorIndex],
                                 destinationDoor: door.direction,
-                                isShortcut: door.isShortcut
+                                isShortcut: door.isShortcut,
                             };
                         } else {
                             // Create a new connection
@@ -760,7 +870,7 @@ function DungeonDisplay() {
                                 direction: oppositeDoor,
                                 destinationRoomId: updatedRoom.id,
                                 destinationDoor: door.direction,
-                                isShortcut: door.isShortcut
+                                isShortcut: door.isShortcut,
                             });
                         }
                     }
@@ -772,13 +882,16 @@ function DungeonDisplay() {
                 if (originalDoor.destinationRoomId) {
                     // Check if this connection still exists in the updated room
                     const stillExists = updatedRoom.doors.some(
-                        (door: DoorConnection) => door.direction === originalDoor.direction &&
+                        (door: DoorConnection) =>
+                            door.direction === originalDoor.direction &&
                             door.destinationRoomId === originalDoor.destinationRoomId
                     );
 
                     if (!stillExists) {
                         // Find the destination room
-                        const destRoomIndex = updatedDungeon.findIndex(r => r.id === originalDoor.destinationRoomId);
+                        const destRoomIndex = updatedDungeon.findIndex(
+                            (r) => r.id === originalDoor.destinationRoomId
+                        );
                         if (destRoomIndex !== -1) {
                             // Find the opposite door in the destination room
                             const oppositeMap: Record<Door, Door> = {
@@ -793,8 +906,14 @@ function DungeonDisplay() {
                             const oppositeDoor = oppositeMap[originalDoor.direction as Door];
 
                             // Remove the connection from the destination room
-                            updatedDungeon[destRoomIndex].doors = updatedDungeon[destRoomIndex].doors.filter(
-                                d => !(d.direction === oppositeDoor && d.destinationRoomId === updatedRoom.id)
+                            updatedDungeon[destRoomIndex].doors = updatedDungeon[
+                                destRoomIndex
+                            ].doors.filter(
+                                (d) =>
+                                    !(
+                                        d.direction === oppositeDoor &&
+                                        d.destinationRoomId === updatedRoom.id
+                                    )
                             );
                         }
                     }
@@ -808,7 +927,9 @@ function DungeonDisplay() {
             // Recalculate fastest path
             setTimeout(recalculateFastestPath, 0);
         } catch (error) {
-            alert("Error: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Error: " + (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
@@ -823,8 +944,8 @@ function DungeonDisplay() {
 
         // Check if the room already has a door in this direction
         const existingDoorDirections = room.doors
-            .filter(door => door.destinationRoomId) // Only consider doors with connections
-            .map(door => door.direction);
+            .filter((door) => door.destinationRoomId) // Only consider doors with connections
+            .map((door) => door.direction);
 
         return adjacentPositions
             .filter(({ direction, x, y }) => {
@@ -832,11 +953,13 @@ function DungeonDisplay() {
                 if (existingDoorDirections.includes(direction)) return false;
 
                 // Find if there's a room at this position
-                const adjacentRoom = dungeon.find(r => r.x === x && r.y === y);
+                const adjacentRoom = dungeon.find((r) => r.x === x && r.y === y);
                 if (!adjacentRoom) return false;
 
                 // Check if the room has a door in this direction (connected or not)
-                const hasDoorInDirection = room.doors.some(door => door.direction === direction);
+                const hasDoorInDirection = room.doors.some(
+                    (door) => door.direction === direction
+                );
                 if (!hasDoorInDirection) return false;
 
                 // Check if the adjacent room has a door in the opposite direction
@@ -852,7 +975,7 @@ function DungeonDisplay() {
 
                 // Check if the adjacent room has a door in the opposite direction
                 const adjacentRoomHasDoor = adjacentRoom.doors.some(
-                    door => door.direction === oppositeDirection
+                    (door) => door.direction === oppositeDirection
                 );
 
                 // We want rooms that have a door in the opposite direction
@@ -860,19 +983,27 @@ function DungeonDisplay() {
             })
             .map(({ direction, x, y }) => ({
                 direction,
-                room: dungeon.find(r => r.x === x && r.y === y)!
+                room: dungeon.find((r) => r.x === x && r.y === y)!,
             }));
     };
 
     // Function to add a connection to an adjacent room
-    const addRoomConnection = (sourceRoom: Room, direction: Door, targetRoom: Room) => {
+    const addRoomConnection = (
+        sourceRoom: Room,
+        direction: Door,
+        targetRoom: Room
+    ) => {
         try {
             // Create a copy of the dungeon
             const updatedDungeon = [...dungeon];
 
             // Find the source and target room indices
-            const sourceIndex = updatedDungeon.findIndex(r => r.id === sourceRoom.id);
-            const targetIndex = updatedDungeon.findIndex(r => r.id === targetRoom.id);
+            const sourceIndex = updatedDungeon.findIndex(
+                (r) => r.id === sourceRoom.id
+            );
+            const targetIndex = updatedDungeon.findIndex(
+                (r) => r.id === targetRoom.id
+            );
 
             if (sourceIndex === -1 || targetIndex === -1) {
                 throw new Error("Room not found");
@@ -891,7 +1022,7 @@ function DungeonDisplay() {
 
             // Find the door in the source room
             const sourceDoorIndex = updatedDungeon[sourceIndex].doors.findIndex(
-                door => door.direction === direction && !door.destinationRoomId
+                (door) => door.direction === direction && !door.destinationRoomId
             );
 
             if (sourceDoorIndex === -1) {
@@ -899,20 +1030,21 @@ function DungeonDisplay() {
                 updatedDungeon[sourceIndex].doors.push({
                     direction,
                     destinationRoomId: targetRoom.id,
-                    destinationDoor: oppositeDirection
+                    destinationDoor: oppositeDirection,
                 });
             } else {
                 // Update the existing door
                 updatedDungeon[sourceIndex].doors[sourceDoorIndex] = {
                     ...updatedDungeon[sourceIndex].doors[sourceDoorIndex],
                     destinationRoomId: targetRoom.id,
-                    destinationDoor: oppositeDirection
+                    destinationDoor: oppositeDirection,
                 };
             }
 
             // Find the door in the target room
             const targetDoorIndex = updatedDungeon[targetIndex].doors.findIndex(
-                door => door.direction === oppositeDirection && !door.destinationRoomId
+                (door) =>
+                    door.direction === oppositeDirection && !door.destinationRoomId
             );
 
             if (targetDoorIndex === -1) {
@@ -920,14 +1052,14 @@ function DungeonDisplay() {
                 updatedDungeon[targetIndex].doors.push({
                     direction: oppositeDirection,
                     destinationRoomId: sourceRoom.id,
-                    destinationDoor: direction
+                    destinationDoor: direction,
                 });
             } else {
                 // Update the existing door
                 updatedDungeon[targetIndex].doors[targetDoorIndex] = {
                     ...updatedDungeon[targetIndex].doors[targetDoorIndex],
                     destinationRoomId: sourceRoom.id,
-                    destinationDoor: direction
+                    destinationDoor: direction,
                 };
             }
 
@@ -941,7 +1073,10 @@ function DungeonDisplay() {
             // Recalculate fastest path
             setTimeout(recalculateFastestPath, 0);
         } catch (error) {
-            alert("Error adding connection: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Error adding connection: " +
+                (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
@@ -952,7 +1087,9 @@ function DungeonDisplay() {
             const updatedDungeon = [...dungeon];
 
             // Find the source room index
-            const sourceIndex = updatedDungeon.findIndex(r => r.id === sourceRoom.id);
+            const sourceIndex = updatedDungeon.findIndex(
+                (r) => r.id === sourceRoom.id
+            );
 
             if (sourceIndex === -1 || doorIndex >= sourceRoom.doors.length) {
                 throw new Error("Room or door not found");
@@ -966,7 +1103,9 @@ function DungeonDisplay() {
             }
 
             // Find the target room
-            const targetIndex = updatedDungeon.findIndex(r => r.id === doorToRemove.destinationRoomId);
+            const targetIndex = updatedDungeon.findIndex(
+                (r) => r.id === doorToRemove.destinationRoomId
+            );
 
             if (targetIndex !== -1) {
                 // Get the opposite direction
@@ -981,8 +1120,14 @@ function DungeonDisplay() {
                 const oppositeDirection = oppositeMap[doorToRemove.direction as Door];
 
                 // Remove the corresponding door from the target room
-                updatedDungeon[targetIndex].doors = updatedDungeon[targetIndex].doors.filter(
-                    d => !(d.direction === oppositeDirection && d.destinationRoomId === sourceRoom.id)
+                updatedDungeon[targetIndex].doors = updatedDungeon[
+                    targetIndex
+                ].doors.filter(
+                    (d) =>
+                        !(
+                            d.direction === oppositeDirection &&
+                            d.destinationRoomId === sourceRoom.id
+                        )
                 );
             }
 
@@ -999,7 +1144,10 @@ function DungeonDisplay() {
             // Recalculate fastest path
             setTimeout(recalculateFastestPath, 0);
         } catch (error) {
-            alert("Error removing connection: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Error removing connection: " +
+                (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
@@ -1010,7 +1158,9 @@ function DungeonDisplay() {
             const updatedDungeon = [...dungeon];
 
             // Find the source room index
-            const sourceIndex = updatedDungeon.findIndex(r => r.id === sourceRoom.id);
+            const sourceIndex = updatedDungeon.findIndex(
+                (r) => r.id === sourceRoom.id
+            );
 
             if (sourceIndex === -1 || doorIndex >= sourceRoom.doors.length) {
                 throw new Error("Room or door not found");
@@ -1027,11 +1177,13 @@ function DungeonDisplay() {
             const newShortcutStatus = !door.isShortcut;
             updatedDungeon[sourceIndex].doors[doorIndex] = {
                 ...door,
-                isShortcut: newShortcutStatus
+                isShortcut: newShortcutStatus,
             };
 
             // Find the target room
-            const targetIndex = updatedDungeon.findIndex(r => r.id === door.destinationRoomId);
+            const targetIndex = updatedDungeon.findIndex(
+                (r) => r.id === door.destinationRoomId
+            );
 
             if (targetIndex !== -1) {
                 // Get the opposite direction
@@ -1047,14 +1199,16 @@ function DungeonDisplay() {
 
                 // Find the corresponding door in the target room
                 const targetDoorIndex = updatedDungeon[targetIndex].doors.findIndex(
-                    d => d.direction === oppositeDirection && d.destinationRoomId === sourceRoom.id
+                    (d) =>
+                        d.direction === oppositeDirection &&
+                        d.destinationRoomId === sourceRoom.id
                 );
 
                 if (targetDoorIndex !== -1) {
                     // Update the shortcut status in the target room
                     updatedDungeon[targetIndex].doors[targetDoorIndex] = {
                         ...updatedDungeon[targetIndex].doors[targetDoorIndex],
-                        isShortcut: newShortcutStatus
+                        isShortcut: newShortcutStatus,
                     };
                 }
             }
@@ -1069,7 +1223,10 @@ function DungeonDisplay() {
             // Recalculate fastest path
             setTimeout(recalculateFastestPath, 0);
         } catch (error) {
-            alert("Error toggling shortcut: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Error toggling shortcut: " +
+                (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
@@ -1080,18 +1237,24 @@ function DungeonDisplay() {
             const updatedDungeon = [...dungeon];
 
             // Find the room index
-            const roomIndex = updatedDungeon.findIndex(room => room.id === roomToDelete.id);
+            const roomIndex = updatedDungeon.findIndex(
+                (room) => room.id === roomToDelete.id
+            );
             if (roomIndex === -1) {
                 throw new Error("Room not found in dungeon");
             }
 
             // Get all connections to this room
-            const connectionsToRemove = roomToDelete.doors.filter(door => door.destinationRoomId);
+            const connectionsToRemove = roomToDelete.doors.filter(
+                (door) => door.destinationRoomId
+            );
 
             // Remove connections from other rooms to this room
-            connectionsToRemove.forEach(door => {
+            connectionsToRemove.forEach((door) => {
                 if (door.destinationRoomId) {
-                    const connectedRoomIndex = updatedDungeon.findIndex(r => r.id === door.destinationRoomId);
+                    const connectedRoomIndex = updatedDungeon.findIndex(
+                        (r) => r.id === door.destinationRoomId
+                    );
                     if (connectedRoomIndex !== -1) {
                         // Find the opposite direction
                         const oppositeMap: Record<Door, Door> = {
@@ -1104,14 +1267,19 @@ function DungeonDisplay() {
                         };
                         const oppositeDirection = oppositeMap[door.direction as Door];
 
-                        // Instead of removing the door, just remove the connection
-                        updatedDungeon[connectedRoomIndex].doors = updatedDungeon[connectedRoomIndex].doors.map(d => {
-                            if (d.direction === oppositeDirection && d.destinationRoomId === roomToDelete.id) {
+                        // Instead of removing the door, just remove the connection (will appear red)
+                        updatedDungeon[connectedRoomIndex].doors = updatedDungeon[
+                            connectedRoomIndex
+                        ].doors.map((d) => {
+                            if (
+                                d.direction === oppositeDirection &&
+                                d.destinationRoomId === roomToDelete.id
+                            ) {
                                 // Keep the door but remove the connection (will appear red)
                                 return {
                                     direction: d.direction,
                                     destinationRoomId: "",
-                                    destinationDoor: "N" // Default value
+                                    destinationDoor: "N", // Default value
                                 };
                             }
                             return d;
@@ -1133,17 +1301,15 @@ function DungeonDisplay() {
             // Recalculate fastest path
             setTimeout(recalculateFastestPath, 0);
         } catch (error) {
-            alert("Error deleting room: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Error deleting room: " +
+                (error instanceof Error ? error.message : String(error))
+            );
         }
     };
 
     return (
         <div className="p-4 text-black" style={{ overflowX: "hidden" }}>
-            <div className="zoom-controls">
-                <button onClick={zoomIn}>Zoom In</button>
-                <button onClick={zoomOut}>Zoom Out</button>
-            </div>
-
             <div
                 ref={containerRef}
                 className="border border-gray-300 overflow-auto relative mb-8"
@@ -1183,12 +1349,14 @@ function DungeonDisplay() {
                                 width: CELL_SIZE - 2,
                                 height: CELL_SIZE - 2,
                                 backgroundColor: categoryColors[room.category],
-                                border: selectedRoom?.id === room.id
-                                    ? "2px solid white"
-                                    : "1px solid black",
-                                boxShadow: selectedRoom?.id === room.id
-                                    ? "0 0 8px rgba(255, 255, 255, 0.8)"
-                                    : "none",
+                                border:
+                                    selectedRoom?.id === room.id
+                                        ? "2px solid white"
+                                        : "1px solid black",
+                                boxShadow:
+                                    selectedRoom?.id === room.id
+                                        ? "0 0 8px rgba(255, 255, 255, 0.8)"
+                                        : "none",
                                 zIndex: selectedRoom?.id === room.id ? 10 : 1,
                                 cursor: "pointer", // Add pointer cursor to indicate clickability
                             }}
@@ -1262,6 +1430,31 @@ function DungeonDisplay() {
                         </div>
                     ))}
                 </div>
+            </div>
+
+            {/* Zoom controls overlay - fixed to viewport */}
+            <div className="fixed bottom-24 right-8 flex flex-col gap-2 z-30 opacity-90 hover:opacity-100 transition-opacity">
+                <button
+                    onClick={zoomIn}
+                    className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
+                    title="Zoom In"
+                >
+                    <span className="text-2xl font-bold">+</span>
+                </button>
+                <button
+                    onClick={zoomOut}
+                    className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
+                    title="Zoom Out"
+                >
+                    <span className="text-2xl font-bold">−</span>
+                </button>
+                <button
+                    onClick={centerView}
+                    className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
+                    title="Center View"
+                >
+                    <span className="text-2xl">⌖</span>
+                </button>
             </div>
 
             {fastestPathSteps !== null && (
@@ -1344,7 +1537,8 @@ function DungeonDisplay() {
                                         updateOffshoot(
                                             i,
                                             "count",
-                                            Math.max(1, parseInt(e.target.value) || 1))
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
                                     }
                                     className="border p-1 rounded w-16"
                                     min="1"
@@ -1357,7 +1551,8 @@ function DungeonDisplay() {
                                         updateOffshoot(
                                             i,
                                             "depth",
-                                            Math.max(1, parseInt(e.target.value) || 1))
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
                                     }
                                     className="border p-1 rounded w-16"
                                     min="1"
@@ -1397,7 +1592,8 @@ function DungeonDisplay() {
                                         updateStaticRoom(
                                             i,
                                             "index",
-                                            Math.max(0, parseInt(e.target.value) || 0))
+                                            Math.max(0, parseInt(e.target.value) || 0)
+                                        )
                                     }
                                     className="border p-1 rounded w-16"
                                     min="0"
@@ -1461,9 +1657,7 @@ function DungeonDisplay() {
                                         <input
                                             type="checkbox"
                                             checked={config.doors.includes(door)}
-                                            onChange={(e) =>
-                                                updateStaticRoomConfig(i, "doors", door)
-                                            }
+                                            onChange={(e) => updateStaticRoomConfig(i, "doors", door)}
                                         />
                                         {door}
                                     </label>
@@ -1478,7 +1672,8 @@ function DungeonDisplay() {
                                         updateStaticRoomConfig(
                                             i,
                                             "variations",
-                                            Math.max(1, parseInt(e.target.value) || 1))
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
                                     }
                                     className="border p-1 rounded w-20"
                                     min="1"
@@ -1516,7 +1711,8 @@ function DungeonDisplay() {
                                         updateRoomConfig(
                                             i,
                                             "weight",
-                                            parseFloat(e.target.value) || 0)
+                                            parseFloat(e.target.value) || 0
+                                        )
                                     }
                                     className="border p-1 rounded w-20"
                                     step="0.01"
@@ -1531,7 +1727,8 @@ function DungeonDisplay() {
                                         updateRoomConfig(
                                             i,
                                             "variations",
-                                            Math.max(1, parseInt(e.target.value) || 1))
+                                            Math.max(1, parseInt(e.target.value) || 1)
+                                        )
                                     }
                                     className="border p-1 rounded w-20"
                                     min="1"
@@ -1562,12 +1759,6 @@ function DungeonDisplay() {
             </div>
 
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
-                <button
-                    onClick={centerView}
-                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                >
-                    Center View
-                </button>
                 <button
                     onClick={generateDungeon}
                     className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -1649,7 +1840,8 @@ function DungeonDisplay() {
                     >
                         <div className="flex justify-between mb-4">
                             <h3 className="font-bold text-lg">
-                                Edit Room: {selectedRoom.baseTemplateId} ({selectedRoom.x}, {selectedRoom.y})
+                                Edit Room: {selectedRoom.baseTemplateId} ({selectedRoom.x},{" "}
+                                {selectedRoom.y})
                             </h3>
                             <button
                                 onClick={() => setShowRoomEditor(false)}
@@ -1663,25 +1855,34 @@ function DungeonDisplay() {
                         <div className="mb-4 p-3 bg-gray-100 rounded border border-gray-300">
                             <div className="grid grid-cols-2 gap-2 text-sm">
                                 <div>
-                                    <span className="font-semibold">ID:</span> <span className="font-mono">{selectedRoom.id.substring(0, 8)}...</span>
+                                    <span className="font-semibold">ID:</span>{" "}
+                                    <span className="font-mono">
+                                        {selectedRoom.id.substring(0, 8)}...
+                                    </span>
                                 </div>
                                 <div>
-                                    <span className="font-semibold">Category:</span> {selectedRoom.category}
+                                    <span className="font-semibold">Category:</span>{" "}
+                                    {selectedRoom.category}
                                 </div>
                                 <div>
-                                    <span className="font-semibold">Template:</span> {selectedRoom.baseTemplateId}
+                                    <span className="font-semibold">Template:</span>{" "}
+                                    {selectedRoom.baseTemplateId}
                                 </div>
                                 <div>
-                                    <span className="font-semibold">Depth:</span> {selectedRoom.depth}
+                                    <span className="font-semibold">Depth:</span>{" "}
+                                    {selectedRoom.depth}
                                 </div>
                                 <div>
-                                    <span className="font-semibold">Position:</span> ({selectedRoom.x}, {selectedRoom.y})
+                                    <span className="font-semibold">Position:</span> (
+                                    {selectedRoom.x}, {selectedRoom.y})
                                 </div>
                                 <div>
-                                    <span className="font-semibold">Doors:</span> {selectedRoom.doors.length}
+                                    <span className="font-semibold">Doors:</span>{" "}
+                                    {selectedRoom.doors.length}
                                 </div>
                                 <div className="col-span-2">
-                                    <span className="font-semibold">Connections:</span> {selectedRoom.doors.filter(d => d.destinationRoomId).length}
+                                    <span className="font-semibold">Connections:</span>{" "}
+                                    {selectedRoom.doors.filter((d) => d.destinationRoomId).length}
                                 </div>
                             </div>
                         </div>
@@ -1690,20 +1891,31 @@ function DungeonDisplay() {
                         <div className="mb-4">
                             <h4 className="font-semibold mb-2">Existing Connections:</h4>
                             <div className="grid grid-cols-1 gap-2">
-                                {selectedRoom.doors.filter(door => door.destinationRoomId).length > 0 ? (
+                                {selectedRoom.doors.filter((door) => door.destinationRoomId)
+                                    .length > 0 ? (
                                     selectedRoom.doors.map((door, index) => {
                                         if (!door.destinationRoomId) return null;
 
                                         // Find the connected room
-                                        const connectedRoom = dungeon.find(r => r.id === door.destinationRoomId);
+                                        const connectedRoom = dungeon.find(
+                                            (r) => r.id === door.destinationRoomId
+                                        );
                                         if (!connectedRoom) return null;
 
                                         return (
-                                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 border rounded">
+                                            <div
+                                                key={index}
+                                                className="flex items-center justify-between p-2 bg-gray-50 border rounded"
+                                            >
                                                 <div>
-                                                    <span className="font-semibold">{door.direction}:</span> {connectedRoom.baseTemplateId} ({connectedRoom.x}, {connectedRoom.y})
+                                                    <span className="font-semibold">
+                                                        {door.direction}:
+                                                    </span>{" "}
+                                                    {connectedRoom.baseTemplateId} ({connectedRoom.x},{" "}
+                                                    {connectedRoom.y})
                                                     <span className="ml-2 text-xs text-gray-500">
-                                                        Category: {connectedRoom.category}, Depth: {connectedRoom.depth}
+                                                        Category: {connectedRoom.category}, Depth:{" "}
+                                                        {connectedRoom.depth}
                                                     </span>
                                                     {door.isShortcut && (
                                                         <span className="ml-2 text-xs text-green-600 font-semibold">
@@ -1714,13 +1926,20 @@ function DungeonDisplay() {
                                                 <div className="flex gap-2">
                                                     <button
                                                         onClick={() => toggleShortcut(selectedRoom, index)}
-                                                        className={`px-2 py-1 ${door.isShortcut ? 'bg-green-500' : 'bg-gray-300'} text-white rounded text-sm hover:opacity-80`}
-                                                        title={door.isShortcut ? "Remove shortcut" : "Mark as shortcut"}
+                                                        className={`px-2 py-1 ${door.isShortcut ? "bg-green-500" : "bg-gray-300"
+                                                            } text-white rounded text-sm hover:opacity-80`}
+                                                        title={
+                                                            door.isShortcut
+                                                                ? "Remove shortcut"
+                                                                : "Mark as shortcut"
+                                                        }
                                                     >
                                                         {door.isShortcut ? "Shortcut ✓" : "Shortcut"}
                                                     </button>
                                                     <button
-                                                        onClick={() => removeRoomConnection(selectedRoom, index)}
+                                                        onClick={() =>
+                                                            removeRoomConnection(selectedRoom, index)
+                                                        }
                                                         className="px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
                                                     >
                                                         Remove
@@ -1740,31 +1959,43 @@ function DungeonDisplay() {
                             <h4 className="font-semibold mb-2">Available Adjacent Rooms:</h4>
                             <div className="grid grid-cols-1 gap-2">
                                 {getAvailableAdjacentRooms(selectedRoom).length > 0 ? (
-                                    getAvailableAdjacentRooms(selectedRoom).map(({ direction, room }) => (
-                                        <div key={direction} className="flex items-center justify-between p-2 bg-gray-50 border rounded">
-                                            <div>
-                                                <span className="font-semibold">{direction}:</span> {room.baseTemplateId} ({room.x}, {room.y})
-                                                <span className="ml-2 text-xs text-gray-500">
-                                                    Category: {room.category}, Depth: {room.depth}
-                                                </span>
-                                            </div>
-                                            <button
-                                                onClick={() => addRoomConnection(selectedRoom, direction, room)}
-                                                className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                                    getAvailableAdjacentRooms(selectedRoom).map(
+                                        ({ direction, room }) => (
+                                            <div
+                                                key={direction}
+                                                className="flex items-center justify-between p-2 bg-gray-50 border rounded"
                                             >
-                                                Add Connection
-                                            </button>
-                                        </div>
-                                    ))
+                                                <div>
+                                                    <span className="font-semibold">{direction}:</span>{" "}
+                                                    {room.baseTemplateId} ({room.x}, {room.y})
+                                                    <span className="ml-2 text-xs text-gray-500">
+                                                        Category: {room.category}, Depth: {room.depth}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() =>
+                                                        addRoomConnection(selectedRoom, direction, room)
+                                                    }
+                                                    className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                                                >
+                                                    Add Connection
+                                                </button>
+                                            </div>
+                                        )
+                                    )
                                 ) : (
-                                    <div className="text-gray-500 italic">No available adjacent rooms for new connections</div>
+                                    <div className="text-gray-500 italic">
+                                        No available adjacent rooms for new connections
+                                    </div>
                                 )}
                             </div>
                         </div>
 
                         <div className="mb-2 flex justify-between items-center">
                             <div>
-                                <span className="text-sm text-gray-600">Edit JSON directly:</span>
+                                <span className="text-sm text-gray-600">
+                                    Edit JSON directly:
+                                </span>
                             </div>
                             <button
                                 onClick={formatJson}
@@ -1782,7 +2013,11 @@ function DungeonDisplay() {
                         <div className="flex justify-between gap-2 mt-4">
                             <button
                                 onClick={() => {
-                                    if (window.confirm(`Are you sure you want to delete this room? This will remove all connections to it.`)) {
+                                    if (
+                                        window.confirm(
+                                            `Are you sure you want to delete this room? This will remove all connections to it.`
+                                        )
+                                    ) {
                                         deleteRoom(selectedRoom);
                                     }
                                 }}
@@ -1830,7 +2065,9 @@ function DungeonDisplay() {
                             <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
                                 {/* Regular Room Types */}
                                 <div className="mb-2">
-                                    <h5 className="font-medium text-sm mb-1 text-gray-700">Regular Rooms:</h5>
+                                    <h5 className="font-medium text-sm mb-1 text-gray-700">
+                                        Regular Rooms:
+                                    </h5>
                                     {roomConfigs.map((config: RoomConfig) => (
                                         <button
                                             key={config.id}
@@ -1847,7 +2084,9 @@ function DungeonDisplay() {
 
                                 {/* Static Room Types */}
                                 <div>
-                                    <h5 className="font-medium text-sm mb-1 text-gray-700">Static Rooms:</h5>
+                                    <h5 className="font-medium text-sm mb-1 text-gray-700">
+                                        Static Rooms:
+                                    </h5>
                                     {staticRoomConfigs.map((config: RoomConfig) => (
                                         <button
                                             key={config.id}
