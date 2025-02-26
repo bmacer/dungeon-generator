@@ -588,7 +588,7 @@ function DungeonDisplay() {
 
         try {
             // Create a new instance of DungeonGenerator
-            const generator = new DungeonGenerator({
+            new DungeonGenerator({
                 expnum,
                 totalRooms,
                 offshoots,
@@ -671,14 +671,21 @@ function DungeonDisplay() {
             // Check for adjacent rooms to avoid same type
             const adjacentRooms = dungeon.filter(
                 (r) =>
-                    (Math.abs(r.x - newRoomPosition.x) === 1 && r.y === newRoomPosition.y) ||
+                    (Math.abs(r.x - newRoomPosition.x) === 1 &&
+                        r.y === newRoomPosition.y) ||
                     (Math.abs(r.y - newRoomPosition.y) === 1 && r.x === newRoomPosition.x)
             );
 
             // If any adjacent room has the same type, warn the user
-            const sameTypeAdjacent = adjacentRooms.find(r => r.baseTemplateId === roomType);
+            const sameTypeAdjacent = adjacentRooms.find(
+                (r) => r.baseTemplateId === roomType
+            );
             if (sameTypeAdjacent) {
-                if (!confirm("This room has the same type as an adjacent room. Continue anyway?")) {
+                if (
+                    !confirm(
+                        "This room has the same type as an adjacent room. Continue anyway?"
+                    )
+                ) {
                     return;
                 }
             }
@@ -1672,7 +1679,9 @@ function DungeonDisplay() {
                                         <input
                                             type="checkbox"
                                             checked={config.doors.includes(door)}
-                                            onChange={(e) => updateStaticRoomConfig(i, "doors", door)}
+                                            onChange={() =>
+                                                updateStaticRoomConfig(i, "doors", door)
+                                            }
                                         />
                                         {door}
                                     </label>
@@ -1762,7 +1771,7 @@ function DungeonDisplay() {
                                         <input
                                             type="checkbox"
                                             checked={config.doors.includes(door)}
-                                            onChange={(e) => updateRoomConfig(i, "doors", door)}
+                                            onChange={() => updateRoomConfig(i, "doors", door)}
                                         />
                                         {door}
                                     </label>
