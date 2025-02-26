@@ -193,11 +193,17 @@ export class DungeonGenerator {
     });
   }
 
-  private getRandomRoomType(requiredDoor?: Door): string {
+  private getRandomRoomType(
+    requiredDoor?: Door,
+    parentRoomType?: string
+  ): string {
     // Filter room configs to only those with compatible doors
     const compatibleRooms = this.normalizedWeights.filter(({ id }) => {
       const config = this.roomConfigs.get(id);
       if (!config || !requiredDoor) return true;
+
+      // Skip if this room type is the same as the parent's type
+      if (parentRoomType && id === parentRoomType) return false;
 
       const oppositeMap: Record<Door, Door> = {
         N: "S",
@@ -212,6 +218,30 @@ export class DungeonGenerator {
     });
 
     if (compatibleRooms.length === 0) {
+      // If no compatible rooms found, try again without filtering by parent type
+      if (parentRoomType) {
+        const fallbackRooms = this.normalizedWeights.filter(({ id }) => {
+          const config = this.roomConfigs.get(id);
+          if (!config || !requiredDoor) return true;
+
+          const oppositeMap: Record<Door, Door> = {
+            N: "S",
+            S: "N",
+            E: "W",
+            W: "E",
+            I: "O",
+            O: "I",
+          };
+
+          return config.doors.includes(oppositeMap[requiredDoor]);
+        });
+
+        if (fallbackRooms.length > 0) {
+          const rand = Math.random();
+          const selected = fallbackRooms.find(({ weight }) => rand <= weight);
+          return selected?.id || fallbackRooms[0].id;
+        }
+      }
       return "RoomTemplateB";
     }
 
@@ -543,7 +573,9 @@ export class DungeonGenerator {
         }
 
         const roomType =
-          remainingRooms === 1 ? "BossRoom" : this.getRandomRoomType(direction);
+          remainingRooms === 1
+            ? "BossRoom"
+            : this.getRandomRoomType(direction, currentRoom.baseTemplateId);
         const doorDirections = this.getMatchingDoors(direction, roomType);
 
         // Skip this direction if doors don't match
@@ -687,7 +719,10 @@ export class DungeonGenerator {
               break;
           }
 
-          const roomType = this.getRandomRoomType(direction);
+          const roomType = this.getRandomRoomType(
+            direction,
+            currentRoom.baseTemplateId
+          );
           const doorDirections = this.getMatchingDoors(direction, roomType);
 
           const newRoom = this.createRoom(
@@ -736,6 +771,36 @@ export class DungeonGenerator {
             `Cannot place static room ${staticRoom.type} at index ${staticRoom.index} - incompatible doors`
           );
           return false;
+        }
+
+        // Check for adjacent rooms with the same type
+        const adjacentRooms: Room[] = [];
+        const adjacentPositions = [
+          { x: oldRoom.x, y: oldRoom.y - 1 }, // North
+          { x: oldRoom.x, y: oldRoom.y + 1 }, // South
+          { x: oldRoom.x + 1, y: oldRoom.y }, // East
+          { x: oldRoom.x - 1, y: oldRoom.y }, // West
+        ];
+
+        adjacentPositions.forEach(({ x, y }) => {
+          if (
+            x >= 0 &&
+            x < GRID_SIZE &&
+            y >= 0 &&
+            y < GRID_SIZE &&
+            this.grid[y][x]
+          ) {
+            adjacentRooms.push(this.grid[y][x]!);
+          }
+        });
+
+        const sameTypeAdjacent = adjacentRooms.find(
+          (r) => r.baseTemplateId === staticRoom.type
+        );
+        if (sameTypeAdjacent) {
+          console.warn(
+            `Warning: Static room ${staticRoom.type} at index ${staticRoom.index} has the same type as an adjacent room`
+          );
         }
 
         this.grid[oldRoom.y][oldRoom.x] = null;

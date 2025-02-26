@@ -668,6 +668,21 @@ function DungeonDisplay() {
                 throw new Error("Room type not found");
             }
 
+            // Check for adjacent rooms to avoid same type
+            const adjacentRooms = dungeon.filter(
+                (r) =>
+                    (Math.abs(r.x - newRoomPosition.x) === 1 && r.y === newRoomPosition.y) ||
+                    (Math.abs(r.y - newRoomPosition.y) === 1 && r.x === newRoomPosition.x)
+            );
+
+            // If any adjacent room has the same type, warn the user
+            const sameTypeAdjacent = adjacentRooms.find(r => r.baseTemplateId === roomType);
+            if (sameTypeAdjacent) {
+                if (!confirm("This room has the same type as an adjacent room. Continue anyway?")) {
+                    return;
+                }
+            }
+
             // Create a copy of the dungeon
             const updatedDungeon = [...dungeon];
 
