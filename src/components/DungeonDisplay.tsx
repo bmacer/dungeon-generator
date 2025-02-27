@@ -1331,7 +1331,7 @@ function DungeonDisplay() {
     };
 
     return (
-        <div className="p-4 text-black" style={{ overflowX: "hidden" }}>
+        <div className="p-4 text-black" style={{ overflowX: "hidden", fontFamily: 'Gnellen' }}>
             <div
                 ref={containerRef}
                 className="border border-gray-300 overflow-auto relative mb-8"
@@ -1351,9 +1351,9 @@ function DungeonDisplay() {
                         width: GRID_SIZE * CELL_SIZE,
                         height: GRID_SIZE * CELL_SIZE,
                         position: "relative",
-                        backgroundColor: "#f0f0f0",
+                        backgroundColor: "#000000",
                         backgroundImage:
-                            "linear-gradient(#ccc 1px, transparent 1px), linear-gradient(90deg, #ccc 1px, transparent 1px)",
+                            "linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)",
                         backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
                         transform: `scale(${zoomLevel})`,
                         transformOrigin: "top left",
