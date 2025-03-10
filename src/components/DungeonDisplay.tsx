@@ -9,6 +9,7 @@ import {
     Door,
     DoorConnection,
 } from "../lib/dungeonGenerator";
+import { useExpeditionApi } from "../hooks/useExpeditionApi";
 
 const CELL_SIZE = 40;
 const GRID_SIZE = 100;
@@ -141,6 +142,7 @@ function DungeonDisplay() {
     const [isDragging, setIsDragging] = useState(false);
     const [startX, setStartX] = useState(0);
     const [scrollLeft, setScrollLeft] = useState(0);
+    const [offset, setOffset] = useState({ x: 0, y: 0 });
 
     const [fastestPathSteps, setFastestPathSteps] = useState<number | null>(null);
 
@@ -155,7 +157,7 @@ function DungeonDisplay() {
 
     // Add new state for JSON view mode
     const [jsonViewMode, setJsonViewMode] = useState<"full" | "simplified">(
-        "full"
+        "simplified"
     );
 
     const [showToast, setShowToast] = useState(false);
@@ -166,6 +168,37 @@ function DungeonDisplay() {
         x: number;
         y: number;
     } | null>(null);
+
+    const [currentExpeditionNumber, setCurrentExpeditionNumber] = useState<
+        number | null
+    >(null);
+    const [expeditionNumberInput, setExpeditionNumberInput] =
+        useState<string>("");
+    const [expeditionNumbers, setExpeditionNumbers] = useState<number[]>([]);
+    const [apiMessage, setApiMessage] = useState<{
+        type: "success" | "error";
+        text: string;
+    } | null>(null);
+    const [apiKey, setApiKey] = useState<string>(
+        localStorage.getItem("apiKey") || "*****"
+    );
+
+    const {
+        loading,
+        error,
+        getCurrentExpeditionNumber,
+        setCurrentExpeditionNumber: apiSetCurrentExpeditionNumber,
+        getAllExpeditionNumbers,
+        getExpeditionRooms,
+        getCachedExpeditionRooms,
+        createGeneratedRooms,
+        deleteExpedition,
+    } = useExpeditionApi(apiKey);
+
+    // Save API key to localStorage when it changes
+    useEffect(() => {
+        localStorage.setItem("apiKey", apiKey);
+    }, [apiKey]);
 
     const centerView = useCallback(() => {
         if (containerRef.current) {
@@ -271,13 +304,17 @@ function DungeonDisplay() {
         setDefaultVariations(2);
     }, []);
 
-    // Add useEffect to handle window-dependent calculations
+    // Add useEffect to handle window-dependent calculations and initial dungeon generation
     useEffect(() => {
         setContainerWidth(Math.min(800, window.innerWidth - 32));
         setContainerHeight(Math.min(800, window.innerHeight - 200));
         generateDungeon(); // Generate once on initial load
+    }, [generateDungeon]); // Remove zoomLevel dependency
+
+    // Separate useEffect for centering view when zoom changes
+    useEffect(() => {
         centerView();
-    }, [generateDungeon, centerView, zoomLevel]);
+    }, [centerView, zoomLevel]);
 
     const addRoomConfig = () => {
         setRoomConfigs([
@@ -561,8 +598,8 @@ function DungeonDisplay() {
         setShowJsonPopup((prev) => !prev);
     };
 
-    // Function to handle grid click for adding new rooms
-    const handleGridClick = (e: React.MouseEvent) => {
+    // Function to handle grid double-click for adding new rooms
+    const handleGridDoubleClick = (e: React.MouseEvent) => {
         if (isDragging) return; // Don't add rooms while dragging
 
         // Get click position relative to the grid
@@ -1330,814 +1367,1217 @@ function DungeonDisplay() {
         }
     };
 
-    return (
-        <div className="p-4 text-black" style={{ overflowX: "hidden", fontFamily: 'Gnellen' }}>
-            <div
-                ref={containerRef}
-                className="border border-gray-300 overflow-auto relative mb-8"
-                style={{
-                    width: containerWidth,
-                    height: containerHeight,
-                    marginLeft: COORD_SIZE,
-                    marginTop: COORD_SIZE,
-                }}
-                onMouseDown={handleMouseDown}
-                onMouseLeave={handleMouseLeave}
-                onMouseUp={handleMouseUp}
-                onMouseMove={handleMouseMove}
-            >
+    // Fetch current expedition number and all expedition numbers on component mount
+    useEffect(() => {
+        const fetchExpeditionData = async () => {
+            try {
+                const currentExpNum = await getCurrentExpeditionNumber();
+                console.log("Current expedition number response:", currentExpNum);
+
+                if (currentExpNum && currentExpNum.number !== undefined) {
+                    setCurrentExpeditionNumber(currentExpNum.number);
+                    setExpeditionNumberInput(currentExpNum.number.toString());
+                }
+
+                const expeditionNums = await getAllExpeditionNumbers();
+                if (expeditionNums) {
+                    setExpeditionNumbers(
+                        Array.isArray(expeditionNums) ? expeditionNums : []
+                    );
+                }
+            } catch (error) {
+                console.error("Error fetching expedition data:", error);
+                setApiMessage({
+                    type: "error",
+                    text: "Failed to fetch expedition data. Please try again.",
+                });
+            }
+        };
+
+        fetchExpeditionData();
+    }, []);
+
+    // Function to load rooms from an expedition
+    const loadExpeditionRooms = async (expeditionNumber: number) => {
+        const rooms = await getExpeditionRooms(expeditionNumber);
+        if (rooms) {
+            setDungeon(rooms);
+            setApiMessage({
+                type: "success",
+                text: `Loaded rooms from expedition ${expeditionNumber}`,
+            });
+
+            // Reset view and selection
+            setSelectedRoom(null);
+            setEditedRoomJson("");
+            setShowJsonPopup(false);
+            setOffset({ x: 0, y: 0 });
+            setZoomLevel(1);
+
+            // Recalculate fastest path
+            setTimeout(recalculateFastestPath, 0);
+        }
+    };
+
+    // Function to save current dungeon to the API
+    const saveToExpedition = async () => {
+        if (!currentExpeditionNumber) {
+            setApiMessage({ type: "error", text: "No expedition number set" });
+            return;
+        }
+
+        // Prepare rooms for saving based on jsonViewMode
+        let roomsToSave;
+        let removedDoors = 0;
+
+        // Create simplified rooms with expedition number and filter out doors without destinationRoomIds
+        roomsToSave = dungeon.map((room) => {
+            // Filter out doors without destinationRoomIds
+            const validDoors = room.doors.filter((door) => door.destinationRoomId);
+
+            // Return simplified room structure
+            return {
+                ...room,
+                // expnum: currentExpeditionNumber,
+                doors: validDoors,
+            };
+        });
+
+        // Count removed doors for notification
+        const totalOriginalDoors = dungeon.reduce(
+            (count, room) => count + room.doors.length,
+            0
+        );
+        const totalValidDoors = roomsToSave.reduce(
+            (count, room) => count + room.doors.length,
+            0
+        );
+        removedDoors = totalOriginalDoors - totalValidDoors;
+
+        const result = await createGeneratedRooms(roomsToSave);
+        if (result) {
+            const successMessage = `Saved rooms!`;
+
+            setApiMessage({
+                type: "success",
+                text: successMessage,
+            });
+        }
+    };
+
+    // Function to delete an expedition
+    const handleDeleteExpedition = async (expeditionNumber: number) => {
+        if (
+            confirm(`Are you sure you want to delete expedition ${expeditionNumber}?`)
+        ) {
+            const result = await deleteExpedition(expeditionNumber);
+            if (result) {
+                setApiMessage({
+                    type: "success",
+                    text: `Deleted expedition ${expeditionNumber}`,
+                });
+
+                // Refresh expedition numbers
+                const expeditionNums = await getAllExpeditionNumbers();
+                if (expeditionNums) {
+                    setExpeditionNumbers(expeditionNums);
+                }
+            }
+        }
+    };
+
+    // Function to update current expedition number
+    const handleSetCurrentExpeditionNumber = async () => {
+        const expnum = parseInt(expeditionNumberInput);
+        if (isNaN(expnum)) {
+            setApiMessage({
+                type: "error",
+                text: "Please enter a valid expedition number",
+            });
+            return;
+        }
+
+        try {
+            const result = await apiSetCurrentExpeditionNumber(expnum);
+            if (result) {
+                setCurrentExpeditionNumber(expnum);
+                setApiMessage({
+                    type: "success",
+                    text: `Set current expedition number to ${expnum}`,
+                });
+
+                // Refresh expedition numbers list
+                const expeditionNums = await getAllExpeditionNumbers();
+                if (expeditionNums) {
+                    setExpeditionNumbers(
+                        Array.isArray(expeditionNums) ? expeditionNums : []
+                    );
+                }
+            }
+        } catch (error) {
+            console.error("Error setting expedition number:", error);
+            setApiMessage({
+                type: "error",
+                text: "Failed to set expedition number. Please try again.",
+            });
+        }
+    };
+
+    // Function to render expedition controls
+    const renderExpeditionControls = () => {
+        return (
+            <div className="expedition-controls" style={{ marginBottom: "20px" }}>
+                <h3>Expedition Controls</h3>
+
+                {apiMessage && (
+                    <div
+                        className={`api-message ${apiMessage.type}`}
+                        style={{
+                            padding: "8px",
+                            marginBottom: "10px",
+                            backgroundColor:
+                                apiMessage.type === "success" ? "#d4edda" : "#f8d7da",
+                            color: apiMessage.type === "success" ? "#155724" : "#721c24",
+                            borderRadius: "4px",
+                        }}
+                    >
+                        {apiMessage.text}
+                        <button
+                            onClick={() => setApiMessage(null)}
+                            style={{
+                                marginLeft: "10px",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
+
+                <div className="fixed top-4 right-4 z-50 bg-white p-4 rounded-lg shadow-lg border border-gray-200">
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span style={{ color: "black" }} className="font-medium">
+                                Current Expedition:
+                            </span>
+                            <div>
+                                <span className="text-black font-semibold">
+                                    {currentExpeditionNumber !== null
+                                        ? currentExpeditionNumber
+                                        : "Loading..."}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <label style={{ color: "black" }} className="font-medium text-sm">
+                                Update Live Expedition to:
+                            </label>
+                            <input
+                                type="number"
+                                value={expeditionNumberInput}
+                                onChange={(e) => setExpeditionNumberInput(e.target.value)}
+                                className="w-24 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                style={{ color: "black" }}
+                            />
+                        </div>
+                        <button
+                            onClick={handleSetCurrentExpeditionNumber}
+                            disabled={loading || expeditionNumberInput === ""}
+                            className="w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Set Expedition #{expeditionNumberInput}
+                        </button>
+                    </div>
+                </div>
+
                 <div
                     style={{
-                        width: GRID_SIZE * CELL_SIZE,
-                        height: GRID_SIZE * CELL_SIZE,
-                        position: "relative",
-                        backgroundColor: "#000000",
-                        backgroundImage:
-                            "linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)",
-                        backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
-                        transform: `scale(${zoomLevel})`,
-                        transformOrigin: "top left",
+                        display: "flex",
+                        gap: "10px",
+                        marginBottom: "10px",
+                        alignItems: "center",
                     }}
-                    onClick={handleGridClick}
                 >
-                    {renderCoordinates()}
-                    {dungeon.map((room, i) => (
-                        <div
-                            key={i}
+                    <label style={{ display: "flex", alignItems: "center" }}>
+                        API Key:
+                        <input
+                            type="text"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
                             style={{
-                                position: "absolute",
-                                left: room.x * CELL_SIZE,
-                                top: room.y * CELL_SIZE,
-                                width: CELL_SIZE - 2,
-                                height: CELL_SIZE - 2,
-                                backgroundColor: categoryColors[room.category],
-                                border:
-                                    selectedRoom?.id === room.id
-                                        ? "2px solid white"
-                                        : "1px solid black",
-                                boxShadow:
-                                    selectedRoom?.id === room.id
-                                        ? "0 0 8px rgba(255, 255, 255, 0.8)"
-                                        : "none",
-                                zIndex: selectedRoom?.id === room.id ? 10 : 1,
-                                cursor: "pointer", // Add pointer cursor to indicate clickability
+                                color: "black",
+                                marginLeft: "10px",
+                                width: "200px",
+                                padding: "5px",
+                                border: "1px solid #ced4da",
+                                borderRadius: "4px",
                             }}
-                            onClick={(e) => {
-                                e.stopPropagation(); // Prevent grid click
-                                handleRoomClick(room);
-                            }} // Add click handler
-                            title={`Base Template: ${room.baseTemplateId}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
-                        >
-                            {room.doors.map((door) => (
+                            placeholder="Enter API key for POST/DELETE requests"
+                        />
+                    </label>
+                    <div
+                        style={{ fontSize: "12px", color: "#6c757d", marginLeft: "10px" }}
+                    >
+                        Required for saving and deleting expeditions
+                    </div>
+                </div>
+
+                <div>
+                    <h4>Available Expeditions:</h4>
+                    <div
+                        style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "10px",
+                            maxHeight: "150px",
+                            overflowY: "auto",
+                        }}
+                    >
+                        {expeditionNumbers.length > 0 ? (
+                            expeditionNumbers.map((expNum) => (
                                 <div
-                                    key={`${door.direction}-${door.destinationRoomId}`}
-                                    style={{
-                                        position: "absolute",
-                                        ...(door.direction === "N" && {
-                                            top: 0,
-                                            left: "40%",
-                                            width: "20%",
-                                            height: "2px",
-                                        }),
-                                        ...(door.direction === "S" && {
-                                            bottom: 0,
-                                            left: "40%",
-                                            width: "20%",
-                                            height: "2px",
-                                        }),
-                                        ...(door.direction === "E" && {
-                                            right: 0,
-                                            top: "40%",
-                                            width: "2px",
-                                            height: "20%",
-                                        }),
-                                        ...(door.direction === "W" && {
-                                            left: 0,
-                                            top: "40%",
-                                            width: "2px",
-                                            height: "20%",
-                                        }),
-                                        backgroundColor: door.destinationRoomId
-                                            ? door.isShortcut
-                                                ? "#7ef623"
-                                                : "white"
-                                            : "red",
-                                        zIndex: 2,
-                                    }}
-                                    title={
-                                        door.destinationRoomId
-                                            ? `${door.isShortcut ? "Shortcut " : ""
-                                            }Connects to room ${door.destinationRoomId} (${door.destinationDoor
-                                            })`
-                                            : "Unconnected door"
-                                    }
-                                />
-                            ))}
-                            <div className="text-[8px] text-center text-white font-bold flex flex-col">
-                                <span>
-                                    {["START", "GNELLEN", "BOSS"].includes(room.category)
-                                        ? room.baseTemplateId[0]
-                                        : room.category === "STATIC"
-                                            ? room.baseTemplateId.replace("StaticRoomTemplate", "")
-                                            : room.baseTemplateId.slice(-1)}
-                                    {` (${room.depth})`}
-                                </span>
-                                <span className="text-[6px]">
-                                    {room.id.split("-")[0].slice(0, 5)}
-                                </span>
-                                {!["START", "GNELLEN", "BOSS", "STATIC"].includes(
-                                    room.category
-                                ) && <span className="text-[6px]">v{room.variation + 1}</span>}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Zoom controls overlay - fixed to viewport */}
-            <div className="fixed bottom-24 right-8 flex flex-col gap-2 z-30 opacity-90 hover:opacity-100 transition-opacity">
-                <button
-                    onClick={zoomIn}
-                    className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
-                    title="Zoom In"
-                >
-                    <span className="text-2xl font-bold">+</span>
-                </button>
-                <button
-                    onClick={zoomOut}
-                    className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
-                    title="Zoom Out"
-                >
-                    <span className="text-2xl font-bold">−</span>
-                </button>
-                <button
-                    onClick={centerView}
-                    className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
-                    title="Center View"
-                >
-                    <span className="text-2xl">⌖</span>
-                </button>
-            </div>
-
-            {fastestPathSteps !== null && (
-                <div className="mb-4">
-                    <h4 className="font-bold">Fastest Path Steps:</h4>
-                    <p>{fastestPathSteps === -1 ? "No path found." : fastestPathSteps}</p>
-                </div>
-            )}
-
-            {renderLegend()}
-
-            <div className="mb-6 space-y-4">
-                <div className="space-y-2">
-                    <h3 className="font-bold">Basic Configuration</h3>
-                    <div className="flex items-center gap-2">
-                        <label>Expedition Number:</label>
-                        <input
-                            type="number"
-                            value={expnum}
-                            onChange={(e) =>
-                                setExpnum(Math.max(1, parseInt(e.target.value) || 100))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="1"
-                        />
-                        <label>Total Rooms:</label>
-                        <input
-                            type="number"
-                            value={totalRooms}
-                            onChange={(e) =>
-                                setTotalRooms(Math.max(1, parseInt(e.target.value) || 1))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="1"
-                        />
-                        <label className="ml-4">Shortcuts:</label>
-                        <input
-                            type="number"
-                            value={shortcuts}
-                            onChange={(e) =>
-                                setShortcuts(Math.max(0, parseInt(e.target.value) || 0))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="0"
-                        />
-                        <label className="ml-4">Default Variations:</label>
-                        <input
-                            type="number"
-                            value={defaultVariations}
-                            onChange={(e) =>
-                                setDefaultVariations(Math.max(1, parseInt(e.target.value) || 1))
-                            }
-                            className="border p-1 rounded w-20"
-                            min="1"
-                        />
+                                    key={expNum}
+                                    style={{ display: "flex", alignItems: "center" }}
+                                >
+                                    <button
+                                        onClick={() => loadExpeditionRooms(expNum)}
+                                        disabled={loading}
+                                        style={{ padding: "5px 10px" }}
+                                    >
+                                        Load #{expNum}
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteExpedition(expNum)}
+                                        disabled={loading}
+                                        style={{ padding: "5px", marginLeft: "5px", color: "red" }}
+                                        title="Delete expedition"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ))
+                        ) : (
+                            <p>No expeditions available</p>
+                        )}
                     </div>
                 </div>
 
-                <div className="space-y-2 ">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Offshoots</h3>
-                        <button
-                            onClick={addOffshoot}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Offshoot
-                        </button>
+                {error && (
+                    <div style={{ color: "red", marginTop: "10px" }}>Error: {error}</div>
+                )}
+
+                {loading && (
+                    <div style={{ color: "#0056b3", marginTop: "10px" }}>Loading...</div>
+                )}
+            </div>
+        );
+    };
+
+    // Function to handle wheel events for zooming with Ctrl/Cmd key
+    const handleWheel = (e: React.WheelEvent) => {
+        // Only handle wheel events with Ctrl or Cmd key pressed
+        if (!(e.ctrlKey || e.metaKey)) return;
+
+        // Prevent the default browser zoom behavior
+        e.preventDefault();
+
+        if (!containerRef.current) return;
+
+        // Get current scroll position and container dimensions
+        const container = containerRef.current;
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+
+        // Calculate the center point of the current view
+        const centerX = container.scrollLeft + containerWidth / 2;
+        const centerY = container.scrollTop + containerHeight / 2;
+
+        // Calculate the ratio between the current center and the total scaled size
+        const ratioX = centerX / (GRID_SIZE * CELL_SIZE * zoomLevel);
+        const ratioY = centerY / (GRID_SIZE * CELL_SIZE * zoomLevel);
+
+        // Use smaller increment for smoother zooming with mousewheel
+        const zoomIncrement = 0.1;
+
+        // Update zoom level
+        setZoomLevel((prev) => {
+            // Determine new zoom level based on wheel direction
+            const newZoom =
+                e.deltaY < 0
+                    ? Math.min(prev + zoomIncrement, 2) // Zoom in (max 2)
+                    : Math.max(prev - zoomIncrement, 0.5); // Zoom out (min 0.5)
+
+            // Calculate new scroll position to maintain the same center point
+            setTimeout(() => {
+                const newTotalWidth = GRID_SIZE * CELL_SIZE * newZoom;
+                const newTotalHeight = GRID_SIZE * CELL_SIZE * newZoom;
+
+                const newScrollLeft = ratioX * newTotalWidth - containerWidth / 2;
+                const newScrollTop = ratioY * newTotalHeight - containerHeight / 2;
+
+                container.scrollTo({
+                    left: newScrollLeft,
+                    top: newScrollTop,
+                    behavior: "auto", // Use 'auto' for immediate scrolling
+                });
+            }, 0);
+
+            return newZoom;
+        });
+    };
+
+    return (
+        <div className="dungeon-display">
+            {renderExpeditionControls()}
+            <div
+                className="p-4 text-black"
+                style={{ overflowX: "hidden", fontFamily: "Gnellen" }}
+            >
+                {fastestPathSteps !== null && (
+                    <div className="mb-4">
+                        <h4 className="font-bold">Fastest Path Steps:</h4>
+                        <p>
+                            {fastestPathSteps === -1 ? "No path found." : fastestPathSteps}
+                        </p>
                     </div>
-                    {offshoots.map(
-                        (offshoot: { count: number; depth: number }, i: number) => (
+                )}
+                <div
+                    ref={containerRef}
+                    className="border border-gray-300 overflow-auto relative mb-8"
+                    style={{
+                        width: containerWidth,
+                        height: containerHeight,
+                        marginLeft: COORD_SIZE,
+                        marginTop: COORD_SIZE,
+                    }}
+                    onMouseDown={handleMouseDown}
+                    onMouseLeave={handleMouseLeave}
+                    onMouseUp={handleMouseUp}
+                    onMouseMove={handleMouseMove}
+                    onWheel={handleWheel}
+                >
+                    <div
+                        style={{
+                            width: GRID_SIZE * CELL_SIZE,
+                            height: GRID_SIZE * CELL_SIZE,
+                            position: "relative",
+                            backgroundColor: "#000000",
+                            backgroundImage:
+                                "linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)",
+                            backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
+                            transform: `scale(${zoomLevel})`,
+                            transformOrigin: "top left",
+                        }}
+                        onDoubleClick={handleGridDoubleClick}
+                    >
+                        {renderCoordinates()}
+                        {dungeon.map((room, i) => (
                             <div
                                 key={i}
-                                className="flex items-center gap-2 bg-gray-50 p-2 rounded"
-                            >
-                                <label>Count:</label>
-                                <input
-                                    type="number"
-                                    value={offshoot.count}
-                                    onChange={(e) =>
-                                        updateOffshoot(
-                                            i,
-                                            "count",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
-                                    }
-                                    className="border p-1 rounded w-16"
-                                    min="1"
-                                />
-                                <label>Depth:</label>
-                                <input
-                                    type="number"
-                                    value={offshoot.depth}
-                                    onChange={(e) =>
-                                        updateOffshoot(
-                                            i,
-                                            "depth",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
-                                    }
-                                    className="border p-1 rounded w-16"
-                                    min="1"
-                                />
-                                <button
-                                    onClick={() => removeOffshoot(i)}
-                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        )
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Static Rooms</h3>
-                        <button
-                            onClick={addStaticRoom}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Static Room
-                        </button>
-                    </div>
-                    {staticRooms.map(
-                        (room: { index: number; type: string }, i: number) => (
-                            <div
-                                key={i}
-                                className="flex items-center gap-2 bg-gray-50 p-2 rounded"
-                            >
-                                <label>Index:</label>
-                                <input
-                                    type="number"
-                                    value={room.index}
-                                    onChange={(e) =>
-                                        updateStaticRoom(
-                                            i,
-                                            "index",
-                                            Math.max(0, parseInt(e.target.value) || 0)
-                                        )
-                                    }
-                                    className="border p-1 rounded w-16"
-                                    min="0"
-                                />
-                                <label>Type:</label>
-                                <select
-                                    value={room.type}
-                                    onChange={(e) => updateStaticRoom(i, "type", e.target.value)}
-                                    className="border p-1 rounded"
-                                >
-                                    {staticRoomConfigs.map((config: RoomConfig) => (
-                                        <option key={config.id} value={config.id}>
-                                            {config.id}
-                                        </option>
-                                    ))}
-                                </select>
-                                <button
-                                    onClick={() => removeStaticRoom(i)}
-                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        )
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Static Room Types</h3>
-                        <button
-                            onClick={addStaticRoomConfig}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Static Room Type
-                        </button>
-                    </div>
-                    {staticRoomConfigs.map((config: RoomConfig, i: number) => (
-                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
-                            <div className="flex items-center gap-2">
-                                <label>ID:</label>
-                                <input
-                                    type="text"
-                                    value={config.id}
-                                    onChange={(e) =>
-                                        updateStaticRoomConfig(i, "id", e.target.value)
-                                    }
-                                    className="border p-1 rounded w-64"
-                                />
-                                <button
-                                    onClick={() => removeStaticRoomConfig(i)}
-                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                            <div className="flex gap-2">
-                                <label>Doors:</label>
-                                {(["N", "S", "E", "W"] as const).map((door) => (
-                                    <label key={door} className="flex items-center gap-1">
-                                        <input
-                                            type="checkbox"
-                                            checked={config.doors.includes(door)}
-                                            onChange={() =>
-                                                updateStaticRoomConfig(i, "doors", door)
-                                            }
-                                        />
-                                        {door}
-                                    </label>
-                                ))}
-                            </div>
-                            <div className="flex gap-2">
-                                <label>Variations:</label>
-                                <input
-                                    type="number"
-                                    value={config.variations || defaultVariations}
-                                    onChange={(e) =>
-                                        updateStaticRoomConfig(
-                                            i,
-                                            "variations",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
-                                    }
-                                    className="border p-1 rounded w-20"
-                                    min="1"
-                                />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-bold">Room Types</h3>
-                        <button
-                            onClick={addRoomConfig}
-                            className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                            Add Room Type
-                        </button>
-                    </div>
-                    {roomConfigs.map((config: RoomConfig, i: number) => (
-                        <div key={i} className="flex flex-col gap-2 bg-gray-50 p-2 rounded">
-                            <div className="flex items-center gap-2">
-                                <label>ID:</label>
-                                <input
-                                    type="text"
-                                    value={config.id}
-                                    onChange={(e) => updateRoomConfig(i, "id", e.target.value)}
-                                    className="border p-1 rounded w-64"
-                                />
-                                <label>Weight:</label>
-                                <input
-                                    type="number"
-                                    value={config.weight}
-                                    onChange={(e) =>
-                                        updateRoomConfig(
-                                            i,
-                                            "weight",
-                                            parseFloat(e.target.value) || 0
-                                        )
-                                    }
-                                    className="border p-1 rounded w-20"
-                                    step="0.01"
-                                    min="0"
-                                    max="1"
-                                />
-                                <label>Variations:</label>
-                                <input
-                                    type="number"
-                                    value={config.variations || defaultVariations}
-                                    onChange={(e) =>
-                                        updateRoomConfig(
-                                            i,
-                                            "variations",
-                                            Math.max(1, parseInt(e.target.value) || 1)
-                                        )
-                                    }
-                                    className="border p-1 rounded w-20"
-                                    min="1"
-                                />
-                                <button
-                                    onClick={() => removeRoomConfig(i)}
-                                    className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                            <div className="flex gap-2">
-                                <label>Doors:</label>
-                                {(["N", "S", "E", "W"] as const).map((door) => (
-                                    <label key={door} className="flex items-center gap-1">
-                                        <input
-                                            type="checkbox"
-                                            checked={config.doors.includes(door)}
-                                            onChange={() => updateRoomConfig(i, "doors", door)}
-                                        />
-                                        {door}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
-                <button
-                    onClick={generateDungeon}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                    Regenerate
-                </button>
-                <button
-                    onClick={copyJsonToClipboard}
-                    className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                >
-                    Copy JSON
-                </button>
-                <button
-                    onClick={toggleJsonPopup}
-                    className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-                >
-                    Show JSON
-                </button>
-                <button
-                    onClick={clearMemory}
-                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                >
-                    Clear Memory
-                </button>
-            </div>
-
-            {showToast && (
-                <div className="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 animate-fade-in-out">
-                    Simplified JSON Copied
-                </div>
-            )}
-
-            {/* JSON Popup */}
-            {showJsonPopup && (
-                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-                    <div
-                        className="bg-white p-4 rounded shadow-lg"
-                        style={{ maxHeight: "80vh", overflowY: "auto" }}
-                    >
-                        <div className="flex justify-between mb-2">
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setJsonViewMode("full")}
-                                    className={`px-2 py-1 rounded ${jsonViewMode === "full"
-                                        ? "bg-blue-500 text-white"
-                                        : "bg-gray-200"
-                                        }`}
-                                >
-                                    Full
-                                </button>
-                                <button
-                                    onClick={() => setJsonViewMode("simplified")}
-                                    className={`px-2 py-1 rounded ${jsonViewMode === "simplified"
-                                        ? "bg-blue-500 text-white"
-                                        : "bg-gray-200"
-                                        }`}
-                                >
-                                    Simplified
-                                </button>
-                            </div>
-                        </div>
-                        <div className="mt-4">
-                            {jsonViewMode === "full" ? (
-                                <pre>{JSON.stringify(dungeon, null, 2)}</pre>
-                            ) : (
-                                <pre>{JSON.stringify(getSimplifiedDungeon(), null, 2)}</pre>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Room Editor Popup */}
-            {showRoomEditor && selectedRoom && (
-                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-                    <div
-                        className="bg-white p-4 rounded shadow-lg w-3/4 max-w-4xl"
-                        style={{ maxHeight: "80vh", overflowY: "auto" }}
-                    >
-                        <div className="flex justify-between mb-4">
-                            <h3 className="font-bold text-lg">
-                                Edit Room: {selectedRoom.baseTemplateId} ({selectedRoom.x},{" "}
-                                {selectedRoom.y})
-                            </h3>
-                            <button
-                                onClick={() => setShowRoomEditor(false)}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        {/* Room summary */}
-                        <div className="mb-4 p-3 bg-gray-100 rounded border border-gray-300">
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                                <div>
-                                    <span className="font-semibold">ID:</span>{" "}
-                                    <span className="font-mono">
-                                        {selectedRoom.id.substring(0, 8)}...
-                                    </span>
-                                </div>
-                                <div>
-                                    <span className="font-semibold">Category:</span>{" "}
-                                    {selectedRoom.category}
-                                </div>
-                                <div>
-                                    <span className="font-semibold">Template:</span>{" "}
-                                    {selectedRoom.baseTemplateId}
-                                </div>
-                                <div>
-                                    <span className="font-semibold">Depth:</span>{" "}
-                                    {selectedRoom.depth}
-                                </div>
-                                <div>
-                                    <span className="font-semibold">Position:</span> (
-                                    {selectedRoom.x}, {selectedRoom.y})
-                                </div>
-                                <div>
-                                    <span className="font-semibold">Doors:</span>{" "}
-                                    {selectedRoom.doors.length}
-                                </div>
-                                <div className="col-span-2">
-                                    <span className="font-semibold">Connections:</span>{" "}
-                                    {selectedRoom.doors.filter((d) => d.destinationRoomId).length}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Existing Connections */}
-                        <div className="mb-4">
-                            <h4 className="font-semibold mb-2">Existing Connections:</h4>
-                            <div className="grid grid-cols-1 gap-2">
-                                {selectedRoom.doors.filter((door) => door.destinationRoomId)
-                                    .length > 0 ? (
-                                    selectedRoom.doors.map((door, index) => {
-                                        if (!door.destinationRoomId) return null;
-
-                                        // Find the connected room
-                                        const connectedRoom = dungeon.find(
-                                            (r) => r.id === door.destinationRoomId
-                                        );
-                                        if (!connectedRoom) return null;
-
-                                        return (
-                                            <div
-                                                key={index}
-                                                className="flex items-center justify-between p-2 bg-gray-50 border rounded"
-                                            >
-                                                <div>
-                                                    <span className="font-semibold">
-                                                        {door.direction}:
-                                                    </span>{" "}
-                                                    {connectedRoom.baseTemplateId} ({connectedRoom.x},{" "}
-                                                    {connectedRoom.y})
-                                                    <span className="ml-2 text-xs text-gray-500">
-                                                        Category: {connectedRoom.category}, Depth:{" "}
-                                                        {connectedRoom.depth}
-                                                    </span>
-                                                    {door.isShortcut && (
-                                                        <span className="ml-2 text-xs text-green-600 font-semibold">
-                                                            Shortcut
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => toggleShortcut(selectedRoom, index)}
-                                                        className={`px-2 py-1 ${door.isShortcut ? "bg-green-500" : "bg-gray-300"
-                                                            } text-white rounded text-sm hover:opacity-80`}
-                                                        title={
-                                                            door.isShortcut
-                                                                ? "Remove shortcut"
-                                                                : "Mark as shortcut"
-                                                        }
-                                                    >
-                                                        {door.isShortcut ? "Shortcut ✓" : "Shortcut"}
-                                                    </button>
-                                                    <button
-                                                        onClick={() =>
-                                                            removeRoomConnection(selectedRoom, index)
-                                                        }
-                                                        className="px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-gray-500 italic">No connections</div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Available Adjacent Rooms */}
-                        <div className="mb-4">
-                            <h4 className="font-semibold mb-2">Available Adjacent Rooms:</h4>
-                            <div className="grid grid-cols-1 gap-2">
-                                {getAvailableAdjacentRooms(selectedRoom).length > 0 ? (
-                                    getAvailableAdjacentRooms(selectedRoom).map(
-                                        ({ direction, room }) => (
-                                            <div
-                                                key={direction}
-                                                className="flex items-center justify-between p-2 bg-gray-50 border rounded"
-                                            >
-                                                <div>
-                                                    <span className="font-semibold">{direction}:</span>{" "}
-                                                    {room.baseTemplateId} ({room.x}, {room.y})
-                                                    <span className="ml-2 text-xs text-gray-500">
-                                                        Category: {room.category}, Depth: {room.depth}
-                                                    </span>
-                                                </div>
-                                                <button
-                                                    onClick={() =>
-                                                        addRoomConnection(selectedRoom, direction, room)
-                                                    }
-                                                    className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
-                                                >
-                                                    Add Connection
-                                                </button>
-                                            </div>
-                                        )
-                                    )
-                                ) : (
-                                    <div className="text-gray-500 italic">
-                                        No available adjacent rooms for new connections
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="mb-2 flex justify-between items-center">
-                            <div>
-                                <span className="text-sm text-gray-600">
-                                    Edit JSON directly:
-                                </span>
-                            </div>
-                            <button
-                                onClick={formatJson}
-                                className="px-2 py-1 bg-gray-200 text-gray-800 rounded text-sm hover:bg-gray-300"
-                            >
-                                Format JSON
-                            </button>
-                        </div>
-                        <textarea
-                            value={editedRoomJson}
-                            onChange={(e) => setEditedRoomJson(e.target.value)}
-                            className="w-full h-96 font-mono text-sm p-2 border rounded bg-gray-50"
-                            spellCheck="false"
-                        />
-                        <div className="flex justify-between gap-2 mt-4">
-                            <button
-                                onClick={() => {
-                                    if (
-                                        window.confirm(
-                                            `Are you sure you want to delete this room? This will remove all connections to it.`
-                                        )
-                                    ) {
-                                        deleteRoom(selectedRoom);
-                                    }
+                                style={{
+                                    position: "absolute",
+                                    left: room.x * CELL_SIZE,
+                                    top: room.y * CELL_SIZE,
+                                    width: CELL_SIZE - 2,
+                                    height: CELL_SIZE - 2,
+                                    backgroundColor: categoryColors[room.category],
+                                    border:
+                                        selectedRoom?.id === room.id
+                                            ? "2px solid white"
+                                            : "1px solid black",
+                                    boxShadow:
+                                        selectedRoom?.id === room.id
+                                            ? "0 0 8px rgba(255, 255, 255, 0.8)"
+                                            : "none",
+                                    zIndex: selectedRoom?.id === room.id ? 10 : 1,
+                                    cursor: "pointer", // Add pointer cursor to indicate clickability
                                 }}
-                                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                                onClick={(e) => {
+                                    e.stopPropagation(); // Prevent grid click
+                                    handleRoomClick(room);
+                                }} // Add click handler
+                                title={`Base Template: ${room.baseTemplateId}, Category: ${room.category}, Depth: ${room.depth}, Position: (${room.x},${room.y})`}
                             >
-                                Delete Room
+                                {room.doors.map((door) => (
+                                    <div
+                                        key={`${door.direction}-${door.destinationRoomId}`}
+                                        style={{
+                                            position: "absolute",
+                                            ...(door.direction === "N" && {
+                                                top: 0,
+                                                left: "40%",
+                                                width: "20%",
+                                                height: "2px",
+                                            }),
+                                            ...(door.direction === "S" && {
+                                                bottom: 0,
+                                                left: "40%",
+                                                width: "20%",
+                                                height: "2px",
+                                            }),
+                                            ...(door.direction === "E" && {
+                                                right: 0,
+                                                top: "40%",
+                                                width: "2px",
+                                                height: "20%",
+                                            }),
+                                            ...(door.direction === "W" && {
+                                                left: 0,
+                                                top: "40%",
+                                                width: "2px",
+                                                height: "20%",
+                                            }),
+                                            backgroundColor: door.destinationRoomId
+                                                ? door.isShortcut
+                                                    ? "#7ef623"
+                                                    : "white"
+                                                : "red",
+                                            zIndex: 2,
+                                        }}
+                                        title={
+                                            door.destinationRoomId
+                                                ? `${door.isShortcut ? "Shortcut " : ""
+                                                }Connects to room ${door.destinationRoomId} (${door.destinationDoor
+                                                })`
+                                                : "Unconnected door"
+                                        }
+                                    />
+                                ))}
+                                <div className="text-[8px] text-center text-white font-bold flex flex-col">
+                                    <span>
+                                        {["START", "GNELLEN", "BOSS"].includes(room.category)
+                                            ? room.baseTemplateId[0]
+                                            : room.category === "STATIC"
+                                                ? room.baseTemplateId.replace("StaticRoomTemplate", "")
+                                                : room.baseTemplateId.slice(-1)}
+                                        {` (${room.depth})`}
+                                    </span>
+                                    <span className="text-[6px]">
+                                        {room.id.split("-")[0].slice(0, 5)}
+                                    </span>
+                                    {!["START", "GNELLEN", "BOSS", "STATIC"].includes(
+                                        room.category
+                                    ) && (
+                                            <span className="text-[6px]">v{room.variation + 1}</span>
+                                        )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Zoom controls overlay - fixed to viewport */}
+                <div className="fixed bottom-24 right-8 flex flex-col gap-2 z-30 opacity-90 hover:opacity-100 transition-opacity">
+                    <button
+                        onClick={zoomIn}
+                        className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
+                        title="Zoom In"
+                    >
+                        <span className="text-2xl font-bold">+</span>
+                    </button>
+                    <div
+                        className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center border border-gray-300 text-sm font-semibold"
+                        title="Current Zoom Level (Use Ctrl/Cmd + Mousewheel to zoom)"
+                    >
+                        {Math.round(zoomLevel * 100)}%
+                    </div>
+                    <button
+                        onClick={zoomOut}
+                        className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
+                        title="Zoom Out"
+                    >
+                        <span className="text-2xl font-bold">−</span>
+                    </button>
+                    <button
+                        onClick={centerView}
+                        className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-100 border border-gray-300 focus:outline-none"
+                        title="Center View"
+                    >
+                        <span className="text-2xl">⌖</span>
+                    </button>
+                </div>
+
+                {renderLegend()}
+
+                <div className="mb-6 space-y-4">
+                    <div className="space-y-2">
+                        <h3 className="font-bold">Basic Configuration</h3>
+                        <div className="flex items-center gap-2">
+                            <label>Expedition Number:</label>
+                            <input
+                                type="number"
+                                value={expnum}
+                                onChange={(e) =>
+                                    setExpnum(Math.max(1, parseInt(e.target.value) || 100))
+                                }
+                                className="border p-1 rounded w-20"
+                                min="1"
+                            />
+                            <label>Total Rooms:</label>
+                            <input
+                                type="number"
+                                value={totalRooms}
+                                onChange={(e) =>
+                                    setTotalRooms(Math.max(1, parseInt(e.target.value) || 1))
+                                }
+                                className="border p-1 rounded w-20"
+                                min="1"
+                            />
+                            <label className="ml-4">Shortcuts:</label>
+                            <input
+                                type="number"
+                                value={shortcuts}
+                                onChange={(e) =>
+                                    setShortcuts(Math.max(0, parseInt(e.target.value) || 0))
+                                }
+                                className="border p-1 rounded w-20"
+                                min="0"
+                            />
+                            <label className="ml-4">Default Variations:</label>
+                            <input
+                                type="number"
+                                value={defaultVariations}
+                                onChange={(e) =>
+                                    setDefaultVariations(
+                                        Math.max(1, parseInt(e.target.value) || 1)
+                                    )
+                                }
+                                className="border p-1 rounded w-20"
+                                min="1"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="space-y-2 ">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-bold">Offshoots</h3>
+                            <button
+                                onClick={addOffshoot}
+                                className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                            >
+                                Add Offshoot
                             </button>
-                            <div className="flex gap-2">
+                        </div>
+                        {offshoots.map(
+                            (offshoot: { count: number; depth: number }, i: number) => (
+                                <div
+                                    key={i}
+                                    className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                                >
+                                    <label>Count:</label>
+                                    <input
+                                        type="number"
+                                        value={offshoot.count}
+                                        onChange={(e) =>
+                                            updateOffshoot(
+                                                i,
+                                                "count",
+                                                Math.max(1, parseInt(e.target.value) || 1)
+                                            )
+                                        }
+                                        className="border p-1 rounded w-16"
+                                        min="1"
+                                    />
+                                    <label>Depth:</label>
+                                    <input
+                                        type="number"
+                                        value={offshoot.depth}
+                                        onChange={(e) =>
+                                            updateOffshoot(
+                                                i,
+                                                "depth",
+                                                Math.max(1, parseInt(e.target.value) || 1)
+                                            )
+                                        }
+                                        className="border p-1 rounded w-16"
+                                        min="1"
+                                    />
+                                    <button
+                                        onClick={() => removeOffshoot(i)}
+                                        className="px-2 py-1 bg-red-500 text-white rounded text-sm"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            )
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-bold">Static Rooms</h3>
+                            <button
+                                onClick={addStaticRoom}
+                                className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                            >
+                                Add Static Room
+                            </button>
+                        </div>
+                        {staticRooms.map(
+                            (room: { index: number; type: string }, i: number) => (
+                                <div
+                                    key={i}
+                                    className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                                >
+                                    <label>Index:</label>
+                                    <input
+                                        type="number"
+                                        value={room.index}
+                                        onChange={(e) =>
+                                            updateStaticRoom(
+                                                i,
+                                                "index",
+                                                Math.max(0, parseInt(e.target.value) || 0)
+                                            )
+                                        }
+                                        className="border p-1 rounded w-16"
+                                        min="0"
+                                    />
+                                    <label>Type:</label>
+                                    <select
+                                        value={room.type}
+                                        onChange={(e) =>
+                                            updateStaticRoom(i, "type", e.target.value)
+                                        }
+                                        className="border p-1 rounded"
+                                    >
+                                        {staticRoomConfigs.map((config: RoomConfig) => (
+                                            <option key={config.id} value={config.id}>
+                                                {config.id}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={() => removeStaticRoom(i)}
+                                        className="px-2 py-1 bg-red-500 text-white rounded text-sm"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            )
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-bold">Static Room Types</h3>
+                            <button
+                                onClick={addStaticRoomConfig}
+                                className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                            >
+                                Add Static Room Type
+                            </button>
+                        </div>
+                        {staticRoomConfigs.map((config: RoomConfig, i: number) => (
+                            <div
+                                key={i}
+                                className="flex flex-col gap-2 bg-gray-50 p-2 rounded"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <label>ID:</label>
+                                    <input
+                                        type="text"
+                                        value={config.id}
+                                        onChange={(e) =>
+                                            updateStaticRoomConfig(i, "id", e.target.value)
+                                        }
+                                        className="border p-1 rounded w-64"
+                                    />
+                                    <button
+                                        onClick={() => removeStaticRoomConfig(i)}
+                                        className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                                <div className="flex gap-2">
+                                    <label>Doors:</label>
+                                    {(["N", "S", "E", "W"] as const).map((door) => (
+                                        <label key={door} className="flex items-center gap-1">
+                                            <input
+                                                type="checkbox"
+                                                checked={config.doors.includes(door)}
+                                                onChange={() =>
+                                                    updateStaticRoomConfig(i, "doors", door)
+                                                }
+                                            />
+                                            {door}
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="flex gap-2">
+                                    <label>Variations:</label>
+                                    <input
+                                        type="number"
+                                        value={config.variations || defaultVariations}
+                                        onChange={(e) =>
+                                            updateStaticRoomConfig(
+                                                i,
+                                                "variations",
+                                                Math.max(1, parseInt(e.target.value) || 1)
+                                            )
+                                        }
+                                        className="border p-1 rounded w-20"
+                                        min="1"
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-bold">Room Types</h3>
+                            <button
+                                onClick={addRoomConfig}
+                                className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                            >
+                                Add Room Type
+                            </button>
+                        </div>
+                        {roomConfigs.map((config: RoomConfig, i: number) => (
+                            <div
+                                key={i}
+                                className="flex flex-col gap-2 bg-gray-50 p-2 rounded"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <label>ID:</label>
+                                    <input
+                                        type="text"
+                                        value={config.id}
+                                        onChange={(e) => updateRoomConfig(i, "id", e.target.value)}
+                                        className="border p-1 rounded w-64"
+                                    />
+                                    <label>Weight:</label>
+                                    <input
+                                        type="number"
+                                        value={config.weight}
+                                        onChange={(e) =>
+                                            updateRoomConfig(
+                                                i,
+                                                "weight",
+                                                parseFloat(e.target.value) || 0
+                                            )
+                                        }
+                                        className="border p-1 rounded w-20"
+                                        step="0.01"
+                                        min="0"
+                                        max="1"
+                                    />
+                                    <label>Variations:</label>
+                                    <input
+                                        type="number"
+                                        value={config.variations || defaultVariations}
+                                        onChange={(e) =>
+                                            updateRoomConfig(
+                                                i,
+                                                "variations",
+                                                Math.max(1, parseInt(e.target.value) || 1)
+                                            )
+                                        }
+                                        className="border p-1 rounded w-20"
+                                        min="1"
+                                    />
+                                    <button
+                                        onClick={() => removeRoomConfig(i)}
+                                        className="px-2 py-1 bg-red-500 text-white rounded text-sm ml-auto"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                                <div className="flex gap-2">
+                                    <label>Doors:</label>
+                                    {(["N", "S", "E", "W"] as const).map((door) => (
+                                        <label key={door} className="flex items-center gap-1">
+                                            <input
+                                                type="checkbox"
+                                                checked={config.doors.includes(door)}
+                                                onChange={() => updateRoomConfig(i, "doors", door)}
+                                            />
+                                            {door}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
+                    <button
+                        onClick={generateDungeon}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                        Regenerate
+                    </button>
+                    <button
+                        onClick={copyJsonToClipboard}
+                        className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                    >
+                        Copy JSON
+                    </button>
+                    <button
+                        onClick={toggleJsonPopup}
+                        className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                    >
+                        Show JSON
+                    </button>
+                    <button
+                        onClick={clearMemory}
+                        className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                        Clear Memory
+                    </button>
+                    <button
+                        onClick={saveToExpedition}
+                        disabled={
+                            !currentExpeditionNumber || loading || dungeon.length === 0
+                        }
+                        className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                        Save Current Dungeon
+                    </button>
+                </div>
+
+                {showToast && (
+                    <div className="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 animate-fade-in-out">
+                        Simplified JSON Copied
+                    </div>
+                )}
+
+                {/* JSON Popup */}
+                {showJsonPopup && (
+                    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                        <div
+                            className="bg-white p-4 rounded shadow-lg"
+                            style={{ maxHeight: "80vh", overflowY: "auto" }}
+                        >
+                            <div className="flex justify-between mb-2">
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setJsonViewMode("full")}
+                                        className={`px-2 py-1 rounded ${jsonViewMode === "full"
+                                                ? "bg-blue-500 text-white"
+                                                : "bg-gray-200"
+                                            }`}
+                                    >
+                                        Full
+                                    </button>
+                                    <button
+                                        onClick={() => setJsonViewMode("simplified")}
+                                        className={`px-2 py-1 rounded ${jsonViewMode === "simplified"
+                                                ? "bg-blue-500 text-white"
+                                                : "bg-gray-200"
+                                            }`}
+                                    >
+                                        Simplified
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="mt-4">
+                                {jsonViewMode === "full" ? (
+                                    <pre>{JSON.stringify(dungeon, null, 2)}</pre>
+                                ) : (
+                                    <pre>{JSON.stringify(getSimplifiedDungeon(), null, 2)}</pre>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Room Editor Popup */}
+                {showRoomEditor && selectedRoom && (
+                    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                        <div
+                            className="bg-white p-4 rounded shadow-lg w-3/4 max-w-4xl"
+                            style={{ maxHeight: "80vh", overflowY: "auto" }}
+                        >
+                            <div className="flex justify-between mb-4">
+                                <h3 className="font-bold text-lg">
+                                    Edit Room: {selectedRoom.baseTemplateId} ({selectedRoom.x},{" "}
+                                    {selectedRoom.y})
+                                </h3>
                                 <button
                                     onClick={() => setShowRoomEditor(false)}
+                                    className="text-gray-500 hover:text-gray-700"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            {/* Room summary */}
+                            <div className="mb-4 p-3 bg-gray-100 rounded border border-gray-300">
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <span className="font-semibold">ID:</span>{" "}
+                                        <span className="font-mono">
+                                            {selectedRoom.id.substring(0, 8)}...
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="font-semibold">Category:</span>{" "}
+                                        {selectedRoom.category}
+                                    </div>
+                                    <div>
+                                        <span className="font-semibold">Template:</span>{" "}
+                                        {selectedRoom.baseTemplateId}
+                                    </div>
+                                    <div>
+                                        <span className="font-semibold">Depth:</span>{" "}
+                                        {selectedRoom.depth}
+                                    </div>
+                                    <div>
+                                        <span className="font-semibold">Position:</span> (
+                                        {selectedRoom.x}, {selectedRoom.y})
+                                    </div>
+                                    <div>
+                                        <span className="font-semibold">Doors:</span>{" "}
+                                        {selectedRoom.doors.length}
+                                    </div>
+                                    <div className="col-span-2">
+                                        <span className="font-semibold">Connections:</span>{" "}
+                                        {
+                                            selectedRoom.doors.filter((d) => d.destinationRoomId)
+                                                .length
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Existing Connections */}
+                            <div className="mb-4">
+                                <h4 className="font-semibold mb-2">Existing Connections:</h4>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {selectedRoom.doors.filter((door) => door.destinationRoomId)
+                                        .length > 0 ? (
+                                        selectedRoom.doors.map((door, index) => {
+                                            if (!door.destinationRoomId) return null;
+
+                                            // Find the connected room
+                                            const connectedRoom = dungeon.find(
+                                                (r) => r.id === door.destinationRoomId
+                                            );
+                                            if (!connectedRoom) return null;
+
+                                            return (
+                                                <div
+                                                    key={index}
+                                                    className="flex items-center justify-between p-2 bg-gray-50 border rounded"
+                                                >
+                                                    <div>
+                                                        <span className="font-semibold">
+                                                            {door.direction}:
+                                                        </span>{" "}
+                                                        {connectedRoom.baseTemplateId} ({connectedRoom.x},{" "}
+                                                        {connectedRoom.y})
+                                                        <span className="ml-2 text-xs text-gray-500">
+                                                            Category: {connectedRoom.category}, Depth:{" "}
+                                                            {connectedRoom.depth}
+                                                        </span>
+                                                        {door.isShortcut && (
+                                                            <span className="ml-2 text-xs text-green-600 font-semibold">
+                                                                Shortcut
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() =>
+                                                                toggleShortcut(selectedRoom, index)
+                                                            }
+                                                            className={`px-2 py-1 ${door.isShortcut ? "bg-green-500" : "bg-gray-300"
+                                                                } text-white rounded text-sm hover:opacity-80`}
+                                                            title={
+                                                                door.isShortcut
+                                                                    ? "Remove shortcut"
+                                                                    : "Mark as shortcut"
+                                                            }
+                                                        >
+                                                            {door.isShortcut ? "Shortcut ✓" : "Shortcut"}
+                                                        </button>
+                                                        <button
+                                                            onClick={() =>
+                                                                removeRoomConnection(selectedRoom, index)
+                                                            }
+                                                            className="px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="text-gray-500 italic">No connections</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Available Adjacent Rooms */}
+                            <div className="mb-4">
+                                <h4 className="font-semibold mb-2">
+                                    Available Adjacent Rooms:
+                                </h4>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {getAvailableAdjacentRooms(selectedRoom).length > 0 ? (
+                                        getAvailableAdjacentRooms(selectedRoom).map(
+                                            ({ direction, room }) => (
+                                                <div
+                                                    key={direction}
+                                                    className="flex items-center justify-between p-2 bg-gray-50 border rounded"
+                                                >
+                                                    <div>
+                                                        <span className="font-semibold">{direction}:</span>{" "}
+                                                        {room.baseTemplateId} ({room.x}, {room.y})
+                                                        <span className="ml-2 text-xs text-gray-500">
+                                                            Category: {room.category}, Depth: {room.depth}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() =>
+                                                            addRoomConnection(selectedRoom, direction, room)
+                                                        }
+                                                        className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                                                    >
+                                                        Add Connection
+                                                    </button>
+                                                </div>
+                                            )
+                                        )
+                                    ) : (
+                                        <div className="text-gray-500 italic">
+                                            No available adjacent rooms for new connections
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="mb-2 flex justify-between items-center">
+                                <div>
+                                    <span className="text-sm text-gray-600">
+                                        Edit JSON directly:
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={formatJson}
+                                    className="px-2 py-1 bg-gray-200 text-gray-800 rounded text-sm hover:bg-gray-300"
+                                >
+                                    Format JSON
+                                </button>
+                            </div>
+                            <textarea
+                                value={editedRoomJson}
+                                onChange={(e) => setEditedRoomJson(e.target.value)}
+                                className="w-full h-96 font-mono text-sm p-2 border rounded bg-gray-50"
+                                spellCheck="false"
+                            />
+                            <div className="flex justify-between gap-2 mt-4">
+                                <button
+                                    onClick={() => {
+                                        if (
+                                            window.confirm(
+                                                `Are you sure you want to delete this room? This will remove all connections to it.`
+                                            )
+                                        ) {
+                                            deleteRoom(selectedRoom);
+                                        }
+                                    }}
+                                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                                >
+                                    Delete Room
+                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setShowRoomEditor(false)}
+                                        className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={saveEditedRoom}
+                                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                    >
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* New Room Modal */}
+                {showNewRoomModal && newRoomPosition && (
+                    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                        <div className="bg-white p-4 rounded shadow-lg w-96">
+                            <div className="flex justify-between mb-4">
+                                <h3 className="font-bold text-lg">
+                                    Add New Room at ({newRoomPosition.x}, {newRoomPosition.y})
+                                </h3>
+                                <button
+                                    onClick={() => setShowNewRoomModal(false)}
+                                    className="text-gray-500 hover:text-gray-700"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="mb-4">
+                                <h4 className="font-semibold mb-2">Select Room Type:</h4>
+                                <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
+                                    {/* Regular Room Types */}
+                                    <div className="mb-2">
+                                        <h5 className="font-medium text-sm mb-1 text-gray-700">
+                                            Regular Rooms:
+                                        </h5>
+                                        {roomConfigs.map((config: RoomConfig) => (
+                                            <button
+                                                key={config.id}
+                                                onClick={() => createNewRoom(config.id)}
+                                                className="w-full text-left p-2 mb-1 bg-blue-50 hover:bg-blue-100 rounded flex justify-between items-center"
+                                            >
+                                                <span>{config.id}</span>
+                                                <span className="text-xs text-gray-500">
+                                                    Doors: {config.doors.join(", ")}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Static Room Types */}
+                                    <div>
+                                        <h5 className="font-medium text-sm mb-1 text-gray-700">
+                                            Static Rooms:
+                                        </h5>
+                                        {staticRoomConfigs.map((config: RoomConfig) => (
+                                            <button
+                                                key={config.id}
+                                                onClick={() => createNewRoom(config.id)}
+                                                className="w-full text-left p-2 mb-1 bg-purple-50 hover:bg-purple-100 rounded flex justify-between items-center"
+                                            >
+                                                <span>{config.id}</span>
+                                                <span className="text-xs text-gray-500">
+                                                    Doors: {config.doors.join(", ")}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => setShowNewRoomModal(false)}
                                     className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
                                 >
                                     Cancel
                                 </button>
-                                <button
-                                    onClick={saveEditedRoom}
-                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                                >
-                                    Save Changes
-                                </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-
-            {/* New Room Modal */}
-            {showNewRoomModal && newRoomPosition && (
-                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-                    <div className="bg-white p-4 rounded shadow-lg w-96">
-                        <div className="flex justify-between mb-4">
-                            <h3 className="font-bold text-lg">
-                                Add New Room at ({newRoomPosition.x}, {newRoomPosition.y})
-                            </h3>
-                            <button
-                                onClick={() => setShowNewRoomModal(false)}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <div className="mb-4">
-                            <h4 className="font-semibold mb-2">Select Room Type:</h4>
-                            <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
-                                {/* Regular Room Types */}
-                                <div className="mb-2">
-                                    <h5 className="font-medium text-sm mb-1 text-gray-700">
-                                        Regular Rooms:
-                                    </h5>
-                                    {roomConfigs.map((config: RoomConfig) => (
-                                        <button
-                                            key={config.id}
-                                            onClick={() => createNewRoom(config.id)}
-                                            className="w-full text-left p-2 mb-1 bg-blue-50 hover:bg-blue-100 rounded flex justify-between items-center"
-                                        >
-                                            <span>{config.id}</span>
-                                            <span className="text-xs text-gray-500">
-                                                Doors: {config.doors.join(", ")}
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {/* Static Room Types */}
-                                <div>
-                                    <h5 className="font-medium text-sm mb-1 text-gray-700">
-                                        Static Rooms:
-                                    </h5>
-                                    {staticRoomConfigs.map((config: RoomConfig) => (
-                                        <button
-                                            key={config.id}
-                                            onClick={() => createNewRoom(config.id)}
-                                            className="w-full text-left p-2 mb-1 bg-purple-50 hover:bg-purple-100 rounded flex justify-between items-center"
-                                        >
-                                            <span>{config.id}</span>
-                                            <span className="text-xs text-gray-500">
-                                                Doors: {config.doors.join(", ")}
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end">
-                            <button
-                                onClick={() => setShowNewRoomModal(false)}
-                                className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }
