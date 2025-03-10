@@ -5,9 +5,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
 const DEFAULT_API_KEY = "evrloot";
 
 // Types
-export interface ExpeditionApiResponse {
+export interface ExpeditionApiResponse<T = unknown> {
   success: boolean;
-  data?: any;
+  data?: T;
   error?: string;
 }
 
@@ -16,10 +16,14 @@ export const expeditionApi = {
   // Get current expedition number
   getCurrentExpeditionNumber: async (
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<{ number: number }>> => {
     const url = `${API_BASE_URL}/api/expeditions/current-expedition-number`;
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: {
+          "X-API-Key": apiKey,
+        },
+      });
       if (!response.ok) {
         throw new Error(
           `HTTP error! status: ${response.status} for URL: ${url}`
@@ -68,7 +72,7 @@ export const expeditionApi = {
   setCurrentExpeditionNumber: async (
     expnum: number,
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<boolean>> => {
     const url = `${API_BASE_URL}/api/expeditions/current-expedition-number`;
     try {
       const response = await fetch(url, {
@@ -84,8 +88,9 @@ export const expeditionApi = {
           `HTTP error! status: ${response.status} for URL: ${url}`
         );
       }
-      const data = await response.json();
-      return { success: true, data };
+      // We don't need to use the data, just check if the request was successful
+      await response.json();
+      return { success: true, data: true };
     } catch (error) {
       console.error("Error setting current expedition number:", error);
       return {
@@ -100,7 +105,7 @@ export const expeditionApi = {
   // Get all expedition numbers
   getAllExpeditionNumbers: async (
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<number[]>> => {
     const url = `${API_BASE_URL}/api/expeditions/generated-rooms/expeditions`;
     try {
       const response = await fetch(url, {
@@ -130,7 +135,7 @@ export const expeditionApi = {
   getExpeditionRooms: async (
     expeditionNumber: number,
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<Room[]>> => {
     const url = `${API_BASE_URL}/api/expeditions/generated-rooms/expedition/${expeditionNumber}`;
     try {
       const response = await fetch(url, {
@@ -163,7 +168,7 @@ export const expeditionApi = {
   getCachedExpeditionRooms: async (
     expeditionNumber: number,
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<Room[]>> => {
     const url = `${API_BASE_URL}/api/expeditions/generated-rooms/cached/${expeditionNumber}`;
     try {
       const response = await fetch(url, {
@@ -196,7 +201,7 @@ export const expeditionApi = {
   createGeneratedRooms: async (
     rooms: Room[],
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<boolean>> => {
     const url = `${API_BASE_URL}/api/expeditions/generated-rooms`;
     try {
       const response = await fetch(url, {
@@ -212,8 +217,9 @@ export const expeditionApi = {
           `HTTP error! status: ${response.status} for URL: ${url}`
         );
       }
-      const data = await response.json();
-      return { success: true, data };
+      // We don't need to use the data, just check if the request was successful
+      await response.json();
+      return { success: true, data: true };
     } catch (error) {
       console.error("Error creating generated rooms:", error);
       return {
@@ -229,7 +235,7 @@ export const expeditionApi = {
   deleteExpedition: async (
     expeditionNumber: number,
     apiKey: string = DEFAULT_API_KEY
-  ): Promise<ExpeditionApiResponse> => {
+  ): Promise<ExpeditionApiResponse<boolean>> => {
     const url = `${API_BASE_URL}/api/expeditions/generated-rooms/expedition/${expeditionNumber}`;
     try {
       const response = await fetch(url, {
@@ -243,8 +249,9 @@ export const expeditionApi = {
           `HTTP error! status: ${response.status} for URL: ${url}`
         );
       }
-      const data = await response.json();
-      return { success: true, data };
+      // We don't need to use the data, just check if the request was successful
+      await response.json();
+      return { success: true, data: true };
     } catch (error) {
       console.error(`Error deleting expedition ${expeditionNumber}:`, error);
       return {

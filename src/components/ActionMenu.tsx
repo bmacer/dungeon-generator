@@ -16,7 +16,6 @@ export default function ActionMenu({
     onClearMemory,
     onSaveToExpedition,
     isSaveDisabled,
-    loading,
     expnum
 }: ActionMenuProps) {
     return (

@@ -129,7 +129,6 @@ function DungeonDisplay() {
     const [isDragging, setIsDragging] = useState(false);
     const [startX, setStartX] = useState(0);
     const [scrollLeft, setScrollLeft] = useState(0);
-    const [offset, setOffset] = useState({ x: 0, y: 0 });
 
     const [fastestPathSteps, setFastestPathSteps] = useState<number | null>(null);
 
@@ -178,8 +177,11 @@ function DungeonDisplay() {
         getCurrentExpeditionNumber,
         setCurrentExpeditionNumber: apiSetCurrentExpeditionNumber,
         getAllExpeditionNumbers,
-        getExpeditionRooms,
-        getCachedExpeditionRooms,
+        // Remove unused API functions with underscore prefix
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        getExpeditionRooms: _getExpeditionRooms,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        getCachedExpeditionRooms: _getCachedExpeditionRooms,
         createGeneratedRooms,
         deleteExpedition,
     } = useExpeditionApi(apiKey);
@@ -1419,7 +1421,7 @@ function DungeonDisplay() {
         };
 
         fetchExpeditionData();
-    }, []);
+    }, [getCurrentExpeditionNumber, getAllExpeditionNumbers]); // Now these functions are stable
 
     // Helper function to show toast notifications
     const showToastNotification = (
@@ -1446,11 +1448,7 @@ function DungeonDisplay() {
         }
 
         // Prepare rooms for saving based on jsonViewMode
-        let roomsToSave;
-        let removedDoors = 0;
-
-        // Create simplified rooms with expedition number and filter out doors without destinationRoomIds
-        roomsToSave = dungeon.map((room) => {
+        const roomsToSave = dungeon.map((room) => {
             // Filter out doors without destinationRoomIds
             const validDoors = room.doors.filter((door) => door.destinationRoomId);
 
@@ -1471,7 +1469,10 @@ function DungeonDisplay() {
             (count, room) => count + room.doors.length,
             0
         );
-        removedDoors = totalOriginalDoors - totalValidDoors;
+
+        // Calculate removed doors but don't use it for now
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const _removedDoors = totalOriginalDoors - totalValidDoors;
 
         try {
             const result = await createGeneratedRooms(roomsToSave);
@@ -2331,8 +2332,8 @@ function DungeonDisplay() {
                                                                         toggleShortcut(selectedRoom, index)
                                                                     }
                                                                     className={`px-2 py-1 ${door.isShortcut
-                                                                            ? "bg-green-500"
-                                                                            : "bg-gray-300"
+                                                                        ? "bg-green-500"
+                                                                        : "bg-gray-300"
                                                                         } text-white rounded text-sm hover:opacity-80`}
                                                                     title={
                                                                         door.isShortcut
