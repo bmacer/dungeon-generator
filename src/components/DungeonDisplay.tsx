@@ -1397,28 +1397,6 @@ function DungeonDisplay() {
         fetchExpeditionData();
     }, []);
 
-    // Function to load rooms from an expedition
-    const loadExpeditionRooms = async (expeditionNumber: number) => {
-        const rooms = await getExpeditionRooms(expeditionNumber);
-        if (rooms) {
-            setDungeon(rooms);
-            setApiMessage({
-                type: "success",
-                text: `Loaded rooms from expedition ${expeditionNumber}`,
-            });
-
-            // Reset view and selection
-            setSelectedRoom(null);
-            setEditedRoomJson("");
-            setShowJsonPopup(false);
-            setOffset({ x: 0, y: 0 });
-            setZoomLevel(1);
-
-            // Recalculate fastest path
-            setTimeout(recalculateFastestPath, 0);
-        }
-    };
-
     // Function to save current dungeon to the API
     const saveToExpedition = async () => {
         if (!currentExpeditionNumber) {
@@ -1527,18 +1505,16 @@ function DungeonDisplay() {
     const renderExpeditionControls = () => {
         return (
             <div className="expedition-controls" style={{ marginBottom: "20px" }}>
-                <h3>Expedition Controls</h3>
-
                 {apiMessage && (
                     <div
-                        className={`api-message ${apiMessage.type}`}
+                        className={`api-message ${apiMessage.type} fixed top-20 right-4 z-50`}
                         style={{
                             padding: "8px",
-                            marginBottom: "10px",
                             backgroundColor:
                                 apiMessage.type === "success" ? "#d4edda" : "#f8d7da",
                             color: apiMessage.type === "success" ? "#155724" : "#721c24",
                             borderRadius: "4px",
+                            maxWidth: "300px",
                         }}
                     >
                         {apiMessage.text}
@@ -1556,10 +1532,10 @@ function DungeonDisplay() {
                     </div>
                 )}
 
-                <div className="fixed top-4 right-4 z-50 bg-white p-4 rounded-lg shadow-lg border border-gray-200">
+                <div className="fixed top-4 right-4 z-50 bg-white p-4 rounded-lg shadow-lg border border-gray-200 w-[400px]">
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-3 mb-2">
-                            <span style={{ color: "black" }} className="font-medium">
+                            <span className="font-medium text-black">
                                 Current Expedition:
                             </span>
                             <div>
@@ -1570,18 +1546,19 @@ function DungeonDisplay() {
                                 </span>
                             </div>
                         </div>
+
                         <div className="flex items-center gap-3">
-                            <label style={{ color: "black" }} className="font-medium text-sm">
+                            <label className="font-medium text-sm text-black">
                                 Update Live Expedition to:
                             </label>
                             <input
                                 type="number"
                                 value={expeditionNumberInput}
                                 onChange={(e) => setExpeditionNumberInput(e.target.value)}
-                                className="w-24 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                style={{ color: "black" }}
+                                className="w-24 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
                             />
                         </div>
+
                         <button
                             onClick={handleSetCurrentExpeditionNumber}
                             disabled={loading || expeditionNumberInput === ""}
@@ -1589,88 +1566,65 @@ function DungeonDisplay() {
                         >
                             Set Expedition #{expeditionNumberInput}
                         </button>
-                    </div>
-                </div>
 
-                <div
-                    style={{
-                        display: "flex",
-                        gap: "10px",
-                        marginBottom: "10px",
-                        alignItems: "center",
-                    }}
-                >
-                    <label style={{ display: "flex", alignItems: "center" }}>
-                        API Key:
-                        <input
-                            type="text"
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            style={{
-                                color: "black",
-                                marginLeft: "10px",
-                                width: "200px",
-                                padding: "5px",
-                                border: "1px solid #ced4da",
-                                borderRadius: "4px",
-                            }}
-                            placeholder="Enter API key for POST/DELETE requests"
-                        />
-                    </label>
-                    <div
-                        style={{ fontSize: "12px", color: "#6c757d", marginLeft: "10px" }}
-                    >
-                        Required for saving and deleting expeditions
-                    </div>
-                </div>
-
-                <div>
-                    <h4>Available Expeditions:</h4>
-                    <div
-                        style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: "10px",
-                            maxHeight: "150px",
-                            overflowY: "auto",
-                        }}
-                    >
-                        {expeditionNumbers.length > 0 ? (
-                            expeditionNumbers.map((expNum) => (
-                                <div
-                                    key={expNum}
-                                    style={{ display: "flex", alignItems: "center" }}
-                                >
-                                    <button
-                                        onClick={() => loadExpeditionRooms(expNum)}
-                                        disabled={loading}
-                                        style={{ padding: "5px 10px" }}
-                                    >
-                                        Load #{expNum}
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteExpedition(expNum)}
-                                        disabled={loading}
-                                        style={{ padding: "5px", marginLeft: "5px", color: "red" }}
-                                        title="Delete expedition"
-                                    >
-                                        ✕
-                                    </button>
+                        <div className="mt-4 border-t pt-4">
+                            <div className="font-medium text-black mb-2">
+                                Available Expeditions:
+                            </div>
+                            <div className="max-h-48 overflow-y-auto pr-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                    {expeditionNumbers.length > 0 ? (
+                                        expeditionNumbers.map((expNum) => (
+                                            <div key={expNum} className="flex items-center gap-1">
+                                                <span className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm text-black flex-grow">
+                                                    Expedition #{expNum}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleDeleteExpedition(expNum)}
+                                                    disabled={loading || expNum === 100}
+                                                    className="p-1 text-red-500 hover:text-red-700"
+                                                    title="Delete expedition"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-gray-500 text-sm col-span-2">
+                                            No expeditions available
+                                        </div>
+                                    )}
                                 </div>
-                            ))
-                        ) : (
-                            <p>No expeditions available</p>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 border-t pt-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <label className="font-medium text-sm text-black">
+                                    API Key:
+                                </label>
+                                <input
+                                    type="text"
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    className="flex-1 px-3 py-2 border rounded-md text-black text-sm"
+                                    placeholder="Enter API key for POST/DELETE requests"
+                                />
+                            </div>
+                            <div className="text-xs text-gray-500">
+                                Required for saving and deleting expeditions
+                            </div>
+                        </div>
+
+                        {error && (
+                            <div className="text-red-500 text-sm mt-2">Error: {error}</div>
+                        )}
+
+                        {loading && (
+                            <div className="text-blue-600 text-sm mt-2">Loading...</div>
                         )}
                     </div>
                 </div>
-
-                {error && (
-                    <div style={{ color: "red", marginTop: "10px" }}>Error: {error}</div>
-                )}
-
-                {loading && (
-                    <div style={{ color: "#0056b3", marginTop: "10px" }}>Loading...</div>
-                )}
             </div>
         );
     };
