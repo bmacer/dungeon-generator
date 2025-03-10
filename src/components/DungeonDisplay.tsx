@@ -10,30 +10,11 @@ import {
     DoorConnection,
 } from "../lib/dungeonGenerator";
 import { useExpeditionApi } from "../hooks/useExpeditionApi";
+import Legend, { categoryColors } from "./Legend";
 
 const CELL_SIZE = 40;
 const GRID_SIZE = 100;
 const COORD_SIZE = 20;
-
-const categoryColors: Record<RoomCategory, string> = {
-    START: "#4CAF50",
-    BOSS: "#f44336",
-    REGULAR_PATH: "#2196F3",
-    STATIC: "#9C27B0",
-    OFFSHOOT: "#FF9800",
-    GNELLEN: "#db8080",
-    SHORTCUT: "#673AB7",
-};
-
-const categoryDescriptions: Record<RoomCategory, string> = {
-    START: "Starting Room",
-    BOSS: "Boss Room",
-    REGULAR_PATH: "Main Path Room",
-    STATIC: "Static Room",
-    OFFSHOOT: "Offshoot Room",
-    GNELLEN: "Gnellen Room",
-    SHORTCUT: "Shortcut Room",
-};
 
 // Default room configurations that can be customized
 const defaultRoomConfigs: RoomConfig[] = [
@@ -442,25 +423,6 @@ function DungeonDisplay() {
                     ))}
                 </div>
             </>
-        );
-    };
-
-    const renderLegend = () => {
-        return (
-            <div className="mt-4 p-4 bg-white rounded border border-gray-300">
-                <h3 className="font-bold mb-2">Legend</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    {Object.entries(categoryColors).map(([category, color]) => (
-                        <div key={category} className="flex items-center gap-2">
-                            <div
-                                className="w-6 h-6 border border-black"
-                                style={{ backgroundColor: color }}
-                            />
-                            <span>{categoryDescriptions[category as RoomCategory]}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
         );
     };
 
@@ -1853,7 +1815,7 @@ function DungeonDisplay() {
                     </button>
                 </div>
 
-                {renderLegend()}
+                <Legend />
 
                 <div className="mb-6 space-y-4">
                     <div className="space-y-2">

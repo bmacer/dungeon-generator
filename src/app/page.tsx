@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import DungeonDisplay from "@/components/DungeonDisplay";
 
 export default function Home() {
@@ -16,8 +16,13 @@ export default function Home() {
     }
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-24" style={{ fontFamily: 'Gnellen' }}>
-            <h1 className="text-4xl font-bold mb-8">Dungeon Generator</h1>
+        <main
+            className="flex min-h-screen flex-col items-center justify-center p-24"
+            style={{ fontFamily: "Gnellen" }}
+        >
+            <h1 className="text-4xl font-bold mb-8" style={{ fontFamily: "Gnellen", color: "black" }}>
+                Dungeon Generator
+            </h1>
             <DungeonDisplay />
         </main>
     );
