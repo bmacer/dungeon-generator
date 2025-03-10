@@ -23,7 +23,7 @@ export const useExpeditionApi = (apiKey: string = "evrloot") => {
 
     try {
       const response = await apiFunction(...args);
-
+      console.log("response", response);
       if (!response.success) {
         setState({
           loading: false,
