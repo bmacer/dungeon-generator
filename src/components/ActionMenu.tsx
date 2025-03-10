@@ -4,6 +4,7 @@ interface ActionMenuProps {
     onShowJson: () => void;
     onClearMemory: () => void;
     onSaveToExpedition: () => void;
+    onLoadCachedDungeon: () => void;
     isSaveDisabled: boolean;
     loading: boolean;
     expnum: number;
@@ -15,6 +16,7 @@ export default function ActionMenu({
     onShowJson,
     onClearMemory,
     onSaveToExpedition,
+    onLoadCachedDungeon,
     isSaveDisabled,
     expnum
 }: ActionMenuProps) {
@@ -50,6 +52,12 @@ export default function ActionMenu({
                 className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
                 Save Current Dungeon ({expnum})
+            </button>
+            <button
+                onClick={onLoadCachedDungeon}
+                className="px-4 py-2 bg-teal-500 text-white rounded hover:bg-teal-600 transition-colors"
+            >
+                Load Cached Dungeon
             </button>
         </div>
     );
