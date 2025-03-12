@@ -21,7 +21,7 @@ export default function BasicConfiguration({
 }: BasicConfigurationProps) {
     return (
         <div
-            style={{ top: "376px" }}
+            style={{ top: "396px" }}
             className="fixed left-4 z-50 bg-white p-4 rounded-lg shadow-lg border border-gray-200"
         >
             <h4 className="font-bold text-sm mb-2">Basic Configuration</h4>

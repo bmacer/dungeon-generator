@@ -1986,7 +1986,7 @@ function DungeonDisplay() {
                     </div>
                 ) : (
                     <>
-                        <FastestPathSteps steps={fastestPathSteps} />
+                        <FastestPathSteps steps={fastestPathSteps} totalRooms={totalRooms} />
                         <BasicConfiguration
                             expnum={expnum}
                             totalRooms={totalRooms}
