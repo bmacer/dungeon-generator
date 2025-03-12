@@ -854,6 +854,11 @@ export class DungeonGenerator {
       adjacentPositions.forEach(({ x, y, direction }) => {
         const room2 = this.grid[y]?.[x];
         if (room2) {
+          // Check if rooms are at the same depth level
+          if (room1.depth !== room2.depth) {
+            return;
+          }
+
           // Check if rooms aren't already connected and both have available door slots
           const oppositeMap: Record<Door, Door> = {
             N: "S",
