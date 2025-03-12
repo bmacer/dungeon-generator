@@ -516,12 +516,14 @@ export class DungeonGenerator {
     let currentRoom = startRoom;
     let remainingRooms = this.config.totalRooms - 1;
     let currentIndex = 3; // Start at 3 since we've placed three rooms
+    let lastRegularRoom = currentRoom; // Keep track of the last regular room placed
 
     // Keep track of attempts to place rooms
     let attempts = 0;
     const maxAttempts = 100; // Prevent infinite loops
 
-    while (remainingRooms > 0 && attempts < maxAttempts) {
+    while (remainingRooms > 1 && attempts < maxAttempts) {
+      // Changed to > 1 to reserve last room for boss
       const directions = this.getAvailableDirections(
         currentRoom.x,
         currentRoom.y,
@@ -572,10 +574,11 @@ export class DungeonGenerator {
             break;
         }
 
-        const roomType =
-          remainingRooms === 1
-            ? "BossRoom"
-            : this.getRandomRoomType(direction, currentRoom.baseTemplateId);
+        // Always get a regular room type here since we're not at the last room
+        const roomType = this.getRandomRoomType(
+          direction,
+          currentRoom.baseTemplateId
+        );
         const doorDirections = this.getMatchingDoors(direction, roomType);
 
         // Skip this direction if doors don't match
@@ -584,8 +587,7 @@ export class DungeonGenerator {
         }
 
         const config = this.roomConfigs.get(roomType);
-        const category =
-          remainingRooms === 1 ? "BOSS" : config?.category || "REGULAR_PATH";
+        const category = config?.category || "REGULAR_PATH";
 
         const newRoom = this.createRoom(
           roomType,
@@ -600,6 +602,7 @@ export class DungeonGenerator {
         this.placeRoom(newRoom);
         this.connectRooms(currentRoom, newRoom, direction);
         currentRoom = newRoom;
+        lastRegularRoom = newRoom; // Update the last regular room
         remainingRooms--;
         currentIndex++;
         attempts = 0;
@@ -613,35 +616,78 @@ export class DungeonGenerator {
       }
     }
 
-    // Update the boss room placement logic to only try east-facing connections
-    if (!this.rooms.some((r) => r.category === "BOSS")) {
-      console.warn("Boss room not placed normally, forcing placement");
+    // Place the boss room at the end of the regular path
+    if (remainingRooms === 1 && lastRegularRoom) {
+      const directions = this.getAvailableDirections(
+        lastRegularRoom.x,
+        lastRegularRoom.y,
+        lastRegularRoom
+      );
 
-      // Find a valid room to branch from - only consider rooms where we can place boss to the east
-      const validRooms = this.rooms.filter((r) => {
-        const directions = this.getAvailableDirections(r.x, r.y, r);
-        return directions.includes("E") && r.category !== "BOSS";
+      // Filter for valid directions where we can place the boss room
+      const validDirections = directions.filter((direction) => {
+        let newX = lastRegularRoom.x;
+        let newY = lastRegularRoom.y;
+
+        switch (direction) {
+          case "N":
+            newY--;
+            break;
+          case "S":
+            newY++;
+            break;
+          case "E":
+            newX++;
+            break;
+          case "W":
+            newX--;
+            break;
+        }
+
+        // Check if this position is valid for the boss room
+        return this.isValidPosition(newX, newY);
       });
 
-      if (validRooms.length > 0) {
-        const parentRoom =
-          validRooms[Math.floor(Math.random() * validRooms.length)];
-        const newX = parentRoom.x + 1; // Boss room must be east of parent
-        const newY = parentRoom.y;
+      if (validDirections.length > 0) {
+        // Prefer east direction if available, otherwise use any valid direction
+        const bossDirection = validDirections.includes("E")
+          ? "E"
+          : validDirections[0];
+        let bossX = lastRegularRoom.x;
+        let bossY = lastRegularRoom.y;
+
+        switch (bossDirection) {
+          case "N":
+            bossY--;
+            break;
+          case "S":
+            bossY++;
+            break;
+          case "E":
+            bossX++;
+            break;
+          case "W":
+            bossX--;
+            break;
+        }
 
         const doorDirections = this.determineRoomDoors("BossRoom");
         const bossRoom = this.createRoom(
           "BossRoom",
-          newX,
-          newY,
-          this.rooms.length,
+          bossX,
+          bossY,
+          currentIndex,
           "BOSS",
           doorDirections,
-          parentRoom
+          lastRegularRoom
         );
 
         this.placeRoom(bossRoom);
-        this.connectRooms(parentRoom, bossRoom, "E");
+        this.connectRooms(lastRegularRoom, bossRoom, bossDirection);
+      } else {
+        console.warn(
+          "Could not place boss room - no valid directions available"
+        );
       }
     }
   }
