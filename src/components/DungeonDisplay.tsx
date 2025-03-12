@@ -183,6 +183,10 @@ function DungeonDisplay() {
         localStorage.getItem("apiKey") || "*****"
     );
 
+    const [environment, setEnvironment] = useState<"dev" | "prod">(
+        (localStorage.getItem("environment") as "dev" | "prod") || "dev"
+    );
+
     const [showLoadCachedDungeonPopup, setShowLoadCachedDungeonPopup] =
         useState(false);
     const [cacheId, setCacheId] = useState("");
@@ -203,12 +207,58 @@ function DungeonDisplay() {
         getCachedExpeditionRooms: _getCachedExpeditionRooms,
         createGeneratedRooms,
         deleteExpedition,
-    } = useExpeditionApi(apiKey);
+        apiUrl,
+    } = useExpeditionApi(apiKey, environment);
 
     // Save API key to localStorage when it changes
     useEffect(() => {
         localStorage.setItem("apiKey", apiKey);
     }, [apiKey]);
+
+    // Create a wrapper for setEnvironment that also resets expedition data
+    const handleEnvironmentChange = useCallback((newEnvironment: "dev" | "prod") => {
+        // Reset expedition data
+        setCurrentExpeditionNumber(null);
+        setExpeditionNumberInput("");
+        setExpeditionNumbers([]);
+        // Set new environment
+        setEnvironment(newEnvironment);
+    }, []);
+
+    // Save environment to localStorage when it changes
+    useEffect(() => {
+        localStorage.setItem("environment", environment);
+    }, [environment]);
+
+    // Fetch expedition data when environment changes
+    useEffect(() => {
+        const fetchExpeditionData = async () => {
+            try {
+                const currentExpNum = await getCurrentExpeditionNumber();
+                if (currentExpNum && currentExpNum.number !== undefined) {
+                    setCurrentExpeditionNumber(currentExpNum.number);
+                    setExpeditionNumberInput(currentExpNum.number.toString());
+                }
+
+                const expeditionNums = await getAllExpeditionNumbers();
+                if (expeditionNums) {
+                    setExpeditionNumbers(Array.isArray(expeditionNums) ? expeditionNums : []);
+                }
+            } catch (error) {
+                console.error("Error fetching expedition data:", error);
+                // Reset data on error
+                setCurrentExpeditionNumber(null);
+                setExpeditionNumberInput("");
+                setExpeditionNumbers([]);
+                setApiMessage({
+                    type: "error",
+                    text: "Failed to fetch expedition data. Please try again.",
+                });
+            }
+        };
+
+        fetchExpeditionData();
+    }, [environment, getCurrentExpeditionNumber, getAllExpeditionNumbers]);
 
     const centerView = useCallback(() => {
         if (containerRef.current) {
@@ -1893,11 +1943,14 @@ function DungeonDisplay() {
                 expeditionNumbers={expeditionNumbers}
                 apiMessage={apiMessage}
                 apiKey={apiKey}
+                environment={environment}
+                apiUrl={apiUrl}
                 onSetExpeditionNumber={handleSetCurrentExpeditionNumber}
                 onDeleteExpedition={handleDeleteExpedition}
                 onExpeditionInputChange={(value) => setExpeditionNumberInput(value)}
                 onApiKeyChange={(value) => setApiKey(value)}
                 onApiMessageClose={() => setApiMessage(null)}
+                onEnvironmentChange={handleEnvironmentChange}
             />
             <div
                 className="p-4 text-black"

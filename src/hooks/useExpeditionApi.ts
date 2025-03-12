@@ -1,5 +1,8 @@
-import { useState, useCallback } from "react";
-import { expeditionApi, ExpeditionApiResponse } from "../lib/expeditionApi";
+import { useState, useCallback, useMemo } from "react";
+import {
+  createExpeditionApi,
+  ExpeditionApiResponse,
+} from "../lib/expeditionApi";
 import { Room } from "../lib/dungeonGenerator";
 
 // Define specific return types for API calls
@@ -13,12 +16,18 @@ interface ApiState {
   data: unknown | null;
 }
 
-export const useExpeditionApi = (apiKey: string = "evrloot") => {
+export const useExpeditionApi = (
+  apiKey: string = "evrloot",
+  environment: "dev" | "prod" = "dev"
+) => {
   const [state, setState] = useState<ApiState>({
     loading: false,
     error: null,
     data: null,
   });
+
+  // Memoize the API instance
+  const api = useMemo(() => createExpeditionApi(environment), [environment]);
 
   const handleApiCall = useCallback(
     async <T extends unknown[], R = unknown>(
@@ -60,73 +69,70 @@ export const useExpeditionApi = (apiKey: string = "evrloot") => {
     [setState]
   );
 
-  // Wrapper functions for each API call with proper return types
+  // Memoize all API functions
   const getCurrentExpeditionNumber = useCallback(
     () =>
       handleApiCall<[string], ExpeditionNumberResponse>(
-        expeditionApi.getCurrentExpeditionNumber,
+        api.getCurrentExpeditionNumber,
         apiKey
       ),
-    [handleApiCall, apiKey]
+    [handleApiCall, apiKey, api]
   );
 
   const setCurrentExpeditionNumber = useCallback(
     (expnum: number) =>
       handleApiCall<[number, string], boolean>(
-        expeditionApi.setCurrentExpeditionNumber,
+        api.setCurrentExpeditionNumber,
         expnum,
         apiKey
       ),
-    [handleApiCall, apiKey]
+    [handleApiCall, apiKey, api]
   );
 
   const getAllExpeditionNumbers = useCallback(
     () =>
-      handleApiCall<[string], number[]>(
-        expeditionApi.getAllExpeditionNumbers,
-        apiKey
-      ),
-    [handleApiCall, apiKey]
+      handleApiCall<[string], number[]>(api.getAllExpeditionNumbers, apiKey),
+    [handleApiCall, apiKey, api]
   );
 
   const getExpeditionRooms = useCallback(
     (expeditionNumber: number) =>
       handleApiCall<[number, string], Room[]>(
-        expeditionApi.getExpeditionRooms,
+        api.getExpeditionRooms,
         expeditionNumber,
         apiKey
       ),
-    [handleApiCall, apiKey]
+    [handleApiCall, apiKey, api]
   );
 
   const getCachedExpeditionRooms = useCallback(
     (expeditionNumber: number) =>
       handleApiCall<[number, string], Room[]>(
-        expeditionApi.getCachedExpeditionRooms,
+        api.getCachedExpeditionRooms,
         expeditionNumber,
         apiKey
       ),
-    [handleApiCall, apiKey]
+    [handleApiCall, apiKey, api]
   );
 
   const createGeneratedRooms = useCallback(
     (rooms: Room[]) =>
       handleApiCall<[Room[], string], boolean>(
-        expeditionApi.createGeneratedRooms,
+        api.createGeneratedRooms,
         rooms,
         apiKey
       ),
-    [handleApiCall, apiKey]
+    [handleApiCall, apiKey, api]
   );
 
   const deleteExpedition = useCallback(
     (expeditionNumber: number) =>
       handleApiCall<[number, string], boolean>(
-        expeditionApi.deleteExpedition,
+        api.deleteExpedition,
         expeditionNumber,
         apiKey
       ),
-    [handleApiCall, apiKey]
+    [handleApiCall, apiKey, api]
   );
 
   return {
@@ -138,5 +144,6 @@ export const useExpeditionApi = (apiKey: string = "evrloot") => {
     getCachedExpeditionRooms,
     createGeneratedRooms,
     deleteExpedition,
+    apiUrl: api.baseUrl,
   };
 };

@@ -6,11 +6,14 @@ interface ActiveExpeditionProps {
     expeditionNumbers: number[];
     apiMessage: { type: "success" | "error"; text: string } | null;
     apiKey: string;
+    environment: "dev" | "prod";
+    apiUrl: string;
     onSetExpeditionNumber: () => void;
     onDeleteExpedition: (expNum: number) => void;
     onExpeditionInputChange: (value: string) => void;
     onApiKeyChange: (value: string) => void;
     onApiMessageClose: () => void;
+    onEnvironmentChange: (env: "dev" | "prod") => void;
 }
 
 export default function ActiveExpedition({
@@ -21,11 +24,14 @@ export default function ActiveExpedition({
     expeditionNumbers,
     apiMessage,
     apiKey,
+    environment,
+    apiUrl,
     onSetExpeditionNumber,
     onDeleteExpedition,
     onExpeditionInputChange,
     onApiKeyChange,
     onApiMessageClose,
+    onEnvironmentChange,
 }: ActiveExpeditionProps) {
     return (
         <div className="expedition-controls" style={{ marginBottom: "20px" }}>
@@ -58,15 +64,43 @@ export default function ActiveExpedition({
 
             <div className="fixed top-4 right-4 z-50 bg-white p-4 rounded-lg shadow-lg border border-gray-200 w-[400px]">
                 <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-3 mb-2">
-                        <span className="font-medium text-black">Current Expedition:</span>
-                        <div>
-                            <span className="text-black font-semibold">
-                                {currentExpeditionNumber !== null
-                                    ? currentExpeditionNumber
-                                    : "Loading..."}
-                            </span>
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-black">Environment:</span>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                                <button
+                                    onClick={() => onEnvironmentChange("dev")}
+                                    className={`px-3 py-1 rounded-md text-sm transition-colors ${environment === "dev"
+                                        ? "bg-blue-500 text-white"
+                                        : "text-gray-600 hover:bg-gray-200"
+                                        }`}
+                                >
+                                    Dev
+                                </button>
+                                <button
+                                    onClick={() => onEnvironmentChange("prod")}
+                                    className={`px-3 py-1 rounded-md text-sm transition-colors ${environment === "prod"
+                                        ? "bg-blue-500 text-white"
+                                        : "text-gray-600 hover:bg-gray-200"
+                                        }`}
+                                >
+                                    Prod
+                                </button>
+                            </div>
                         </div>
+                    </div>
+
+                    <div className="text-sm text-gray-600 -mt-2 mb-1">
+                        API URL: <span className="font-mono text-gray-800">{apiUrl}</span>
+                    </div>
+
+                    <div className="flex items-center" >
+                        <span className="font-medium text-black">Current Active Expedition:</span>
+                        <span style={{ marginLeft: "10px" }} className="text-black font-semibold">
+                            {currentExpeditionNumber !== null
+                                ? currentExpeditionNumber
+                                : "0"}
+                        </span>
                     </div>
 
                     <div className="flex items-center gap-3">
