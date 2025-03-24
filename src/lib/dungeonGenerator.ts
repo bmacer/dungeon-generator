@@ -624,71 +624,36 @@ export class DungeonGenerator {
         lastRegularRoom
       );
 
-      // Filter for valid directions where we can place the boss room
-      const validDirections = directions.filter((direction) => {
-        let newX = lastRegularRoom.x;
-        let newY = lastRegularRoom.y;
-
-        switch (direction) {
-          case "N":
-            newY--;
-            break;
-          case "S":
-            newY++;
-            break;
-          case "E":
-            newX++;
-            break;
-          case "W":
-            newX--;
-            break;
-        }
+      // Only allow placing boss room to the east of the last regular room
+      if (directions.includes("E")) {
+        const bossX = lastRegularRoom.x + 1;
+        const bossY = lastRegularRoom.y;
 
         // Check if this position is valid for the boss room
-        return this.isValidPosition(newX, newY);
-      });
+        if (this.isValidPosition(bossX, bossY)) {
+          const doorDirections: Door[] = ["W"]; // Boss room only has west-facing door
+          const bossRoom = this.createRoom(
+            "BossRoom",
+            bossX,
+            bossY,
+            currentIndex,
+            "BOSS",
+            doorDirections,
+            lastRegularRoom
+          );
 
-      if (validDirections.length > 0) {
-        // Prefer east direction if available, otherwise use any valid direction
-        const bossDirection = validDirections.includes("E")
-          ? "E"
-          : validDirections[0];
-        let bossX = lastRegularRoom.x;
-        let bossY = lastRegularRoom.y;
-
-        switch (bossDirection) {
-          case "N":
-            bossY--;
-            break;
-          case "S":
-            bossY++;
-            break;
-          case "E":
-            bossX++;
-            break;
-          case "W":
-            bossX--;
-            break;
+          this.placeRoom(bossRoom);
+          this.connectRooms(lastRegularRoom, bossRoom, "E");
+        } else {
+          throw new Error("Boss room generation failed - position not valid");
         }
-
-        const doorDirections = this.determineRoomDoors("BossRoom");
-        const bossRoom = this.createRoom(
-          "BossRoom",
-          bossX,
-          bossY,
-          currentIndex,
-          "BOSS",
-          doorDirections,
-          lastRegularRoom
-        );
-
-        this.placeRoom(bossRoom);
-        this.connectRooms(lastRegularRoom, bossRoom, bossDirection);
       } else {
-        console.warn(
-          "Could not place boss room - no valid directions available"
+        throw new Error(
+          "Boss room generation failed - needs to be placed east of last room"
         );
       }
+    } else {
+      throw new Error("Boss room generation failed - no valid last room found");
     }
   }
 
@@ -975,41 +940,55 @@ export class DungeonGenerator {
     let attempts = 0;
 
     while (attempts < maxAttempts) {
-      // Reset state for new attempt
-      this.grid = Array(GRID_SIZE)
-        .fill(null)
-        .map(() => Array(GRID_SIZE).fill(null));
-      this.rooms = [];
-      this.currentDepth = 0;
+      try {
+        // Reset state for new attempt
+        this.grid = Array(GRID_SIZE)
+          .fill(null)
+          .map(() => Array(GRID_SIZE).fill(null));
+        this.rooms = [];
+        this.currentDepth = 0;
 
-      // Generate main dungeon structure
-      this.generateMainPath();
+        // Generate main dungeon structure (including boss room)
+        this.generateMainPath();
 
-      // Try to place static rooms
-      if (!this.placeStaticRooms()) {
+        // Try to place static rooms
+        if (!this.placeStaticRooms()) {
+          attempts++;
+          console.warn(
+            `Dungeon generation attempt ${attempts} failed due to static room placement`
+          );
+          continue;
+        }
+
+        // Try to generate offshoots
+        if (!this.generateOffshoots()) {
+          attempts++;
+          console.warn(
+            `Dungeon generation attempt ${attempts} failed due to offshoot generation`
+          );
+          continue;
+        }
+
+        // If we got here, everything was successful including boss room placement
+        this.generateShortcuts();
+        return {
+          rooms: this.rooms,
+          fastestPathSteps: this.testFastestPath(),
+          expnum: this.config.expnum,
+        };
+      } catch (error) {
         attempts++;
-        console.warn(
-          `Dungeon generation attempt ${attempts} failed due to static room placement`
-        );
+        if (error instanceof Error) {
+          console.warn(
+            `Dungeon generation attempt ${attempts} failed: ${error.message}`
+          );
+        } else {
+          console.warn(
+            `Dungeon generation attempt ${attempts} failed with unknown error`
+          );
+        }
         continue;
       }
-
-      // Try to generate offshoots
-      if (!this.generateOffshoots()) {
-        attempts++;
-        console.warn(
-          `Dungeon generation attempt ${attempts} failed due to offshoot generation`
-        );
-        continue;
-      }
-
-      // If we got here, both static rooms and offshoots were successful
-      this.generateShortcuts();
-      return {
-        rooms: this.rooms,
-        fastestPathSteps: this.testFastestPath(),
-        expnum: this.config.expnum,
-      };
     }
 
     throw new Error(
