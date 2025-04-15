@@ -791,14 +791,8 @@ export class DungeonGenerator {
         const doorBeforeOldRoom = this.rooms[staticRoom.index - 1];
         const dx = oldRoom.x - doorBeforeOldRoom.x;
         const dy = oldRoom.y - doorBeforeOldRoom.y;
-        console.log(`dx: ${dx} dy: ${dy}`);
         const entryDirection = this.getEntryDirectionFromDiff(dx, dy);
-        console.log(`Entry direction: ${entryDirection}`);
-        console.log(oldRoom);
-        console.log(doorBeforeOldRoom);
-        console.log(staticRoom);
         const roomConfig = this.roomConfigs.get(staticRoom.type);
-        console.log(roomConfig);
 
         if (!roomConfig) {
           console.warn(
@@ -892,6 +886,8 @@ export class DungeonGenerator {
           oldRoom
         );
 
+        let connections = 0;
+
         // Copy over only the valid connections
         oldRoom.doors.forEach((oldDoor) => {
           if (oldDoor.destinationRoomId) {
@@ -899,15 +895,25 @@ export class DungeonGenerator {
               (r) => r.id === oldDoor.destinationRoomId
             );
             if (destinationRoom) {
+              connections += 1;
               this.connectRooms(newRoom, destinationRoom, oldDoor.direction);
             }
           }
         });
 
+        if (connections < 2) {
+          console.log(
+            "Something is wrong, unable to exit static room, abandoning this generation and retrying"
+          );
+          return false;
+        }
+
         this.grid[newRoom.y][newRoom.x] = newRoom;
         this.rooms[staticRoom.index] = newRoom;
       }
     }
+
+    console.log(`Static room placed!!!!`);
     return true;
   }
 

@@ -58,6 +58,7 @@ const defaultStaticRoomConfigs: RoomConfig[] = [
         weight: 0,
         category: "STATIC",
         isSpecial: true,
+        entryDoor: "N",
     },
     {
         id: "StaticRoomTemplateY",
@@ -65,6 +66,7 @@ const defaultStaticRoomConfigs: RoomConfig[] = [
         weight: 0,
         category: "STATIC",
         isSpecial: true,
+        entryDoor: "N",
     },
     {
         id: "StaticRoomTemplateZ",
@@ -72,6 +74,7 @@ const defaultStaticRoomConfigs: RoomConfig[] = [
         weight: 0,
         category: "STATIC",
         isSpecial: true,
+        entryDoor: "E",
     },
 ];
 
@@ -216,14 +219,17 @@ function DungeonDisplay() {
     }, [apiKey]);
 
     // Create a wrapper for setEnvironment that also resets expedition data
-    const handleEnvironmentChange = useCallback((newEnvironment: "dev" | "prod") => {
-        // Reset expedition data
-        setCurrentExpeditionNumber(null);
-        setExpeditionNumberInput("");
-        setExpeditionNumbers([]);
-        // Set new environment
-        setEnvironment(newEnvironment);
-    }, []);
+    const handleEnvironmentChange = useCallback(
+        (newEnvironment: "dev" | "prod") => {
+            // Reset expedition data
+            setCurrentExpeditionNumber(null);
+            setExpeditionNumberInput("");
+            setExpeditionNumbers([]);
+            // Set new environment
+            setEnvironment(newEnvironment);
+        },
+        []
+    );
 
     // Save environment to localStorage when it changes
     useEffect(() => {
@@ -242,7 +248,9 @@ function DungeonDisplay() {
 
                 const expeditionNums = await getAllExpeditionNumbers();
                 if (expeditionNums) {
-                    setExpeditionNumbers(Array.isArray(expeditionNums) ? expeditionNums : []);
+                    setExpeditionNumbers(
+                        Array.isArray(expeditionNums) ? expeditionNums : []
+                    );
                 }
             } catch (error) {
                 console.error("Error fetching expedition data:", error);
@@ -1987,7 +1995,10 @@ function DungeonDisplay() {
                     </div>
                 ) : (
                     <>
-                        <FastestPathSteps steps={fastestPathSteps} totalRooms={totalRooms} />
+                        <FastestPathSteps
+                            steps={fastestPathSteps}
+                            totalRooms={totalRooms}
+                        />
                         <BasicConfiguration
                             expnum={expnum}
                             totalRooms={totalRooms}
@@ -2337,7 +2348,11 @@ function DungeonDisplay() {
                                             <select
                                                 value={config.entryDoor || ""}
                                                 onChange={(e) =>
-                                                    updateStaticRoomConfig(i, "entryDoor", e.target.value as Door)
+                                                    updateStaticRoomConfig(
+                                                        i,
+                                                        "entryDoor",
+                                                        e.target.value as Door
+                                                    )
                                                 }
                                                 className="border p-1 rounded"
                                             >
