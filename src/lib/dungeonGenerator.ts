@@ -1003,7 +1003,7 @@ export class DungeonGenerator {
   }
 
   generate(): { rooms: Room[]; fastestPathSteps: number; expnum: number } {
-    const maxAttempts = 500; // Prevent infinite loops
+    const maxAttempts = 5000; // Prevent infinite loops
     let attempts = 0;
 
     while (attempts < maxAttempts) {
