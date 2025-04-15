@@ -22,6 +22,7 @@ export interface RoomConfig {
   category?: RoomCategory; // Optional default category
   isSpecial?: boolean; // If true, won't be used in random selection
   variations?: number; // Number of possible variations for this room type
+  entryDoor?: Door; // Required entry door for static rooms
 }
 
 export interface Room {
@@ -115,6 +116,7 @@ const STATIC_ROOM_CONFIGS: RoomConfig[] = [
     category: "STATIC",
     isSpecial: true,
     variations: 2,
+    entryDoor: "S", // Example entry door
   },
   {
     id: "StaticRoomTemplateY",
@@ -123,6 +125,7 @@ const STATIC_ROOM_CONFIGS: RoomConfig[] = [
     category: "STATIC",
     isSpecial: true,
     variations: 2,
+    entryDoor: "W", // Example entry door
   },
   {
     id: "StaticRoomTemplateZ",
@@ -131,6 +134,7 @@ const STATIC_ROOM_CONFIGS: RoomConfig[] = [
     category: "STATIC",
     isSpecial: true,
     variations: 2,
+    entryDoor: "W", // Example entry door
   },
 ];
 
@@ -763,16 +767,79 @@ export class DungeonGenerator {
     return true;
   }
 
+  private getEntryDirectionFromDiff = (dx: number, dy: number) => {
+    if (dx === -1 && dy === 0) {
+      return "E";
+    }
+    if (dx === 1 && dy === 0) {
+      return "W";
+    }
+    if (dx === 0 && dy === 1) {
+      return "N";
+    }
+    if (dx === 0 && dy === -1) {
+      return "S";
+    }
+    console.warn(`Improper dy/dx: ${dy}/${dx}`);
+    return "X";
+  };
+
   private placeStaticRooms(): boolean {
     for (const staticRoom of this.config.staticRooms) {
       if (staticRoom.index < this.rooms.length) {
         const oldRoom = this.rooms[staticRoom.index];
+        const doorBeforeOldRoom = this.rooms[staticRoom.index - 1];
+        const dx = oldRoom.x - doorBeforeOldRoom.x;
+        const dy = oldRoom.y - doorBeforeOldRoom.y;
+        console.log(`dx: ${dx} dy: ${dy}`);
+        const entryDirection = this.getEntryDirectionFromDiff(dx, dy);
+        console.log(`Entry direction: ${entryDirection}`);
+        console.log(oldRoom);
+        console.log(doorBeforeOldRoom);
+        console.log(staticRoom);
+        const roomConfig = this.roomConfigs.get(staticRoom.type);
+        console.log(roomConfig);
+
+        if (!roomConfig) {
+          console.warn(
+            `Room config not found for static room type: ${staticRoom.type}`
+          );
+          return false;
+        }
+
+        if (!roomConfig.entryDoor) {
+          console.warn(
+            `Entry door not defined for static room type: ${staticRoom.type}`
+          );
+          return false;
+        }
+
         const doorDirections = this.determineRoomDoors(staticRoom.type);
 
         // Check if static room can support all required connections
         const requiredConnections = oldRoom.doors.filter(
           (door) => door.destinationRoomId
         );
+
+        const requiredEntryConnection = requiredConnections.find(
+          (door) => door.direction === roomConfig.entryDoor
+        );
+
+        if (!requiredEntryConnection) {
+          console.warn(
+            `Cannot place static room ${staticRoom.type} at index ${staticRoom.index} - required entry door ${roomConfig.entryDoor} not available`
+          );
+          return false;
+        }
+
+        if (entryDirection !== roomConfig.entryDoor) {
+          console.warn(
+            `Cannot place entry door at ${entryDirection}, must be at ${roomConfig.entryDoor}`
+          );
+          return false;
+        }
+
+        // Then check if all other required connections are supported
         const canSupportConnections = requiredConnections.every((door) =>
           doorDirections.includes(door.direction)
         );

@@ -1034,10 +1034,11 @@ function DungeonDisplay() {
                 id: `StaticRoomTemplate${String.fromCharCode(
                     65 + staticRoomConfigs.length
                 )}`,
-                doors: [],
+                doors: ["N", "S", "E", "W"],
                 weight: 0,
                 category: "STATIC",
                 isSpecial: true,
+                entryDoor: "S", // Default entry door
             },
         ]);
     };
@@ -2330,6 +2331,23 @@ function DungeonDisplay() {
                                                     {door}
                                                 </label>
                                             ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <label>Entry Door:</label>
+                                            <select
+                                                value={config.entryDoor || ""}
+                                                onChange={(e) =>
+                                                    updateStaticRoomConfig(i, "entryDoor", e.target.value as Door)
+                                                }
+                                                className="border p-1 rounded"
+                                            >
+                                                <option value="">Select Entry Door</option>
+                                                {config.doors.map((door) => (
+                                                    <option key={door} value={door}>
+                                                        {door}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </div>
                                         <div className="flex gap-2">
                                             <label>Variations:</label>
